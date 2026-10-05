@@ -1,0 +1,187 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Barlow+Condensed:wght@600;700;800&display=block" rel="stylesheet">
+<style>
+  html,body{margin:0;width:1200px;height:630px;overflow:hidden;background:#0d1416}
+  .og{position:relative;width:1200px;height:630px;overflow:hidden;font-family:'Barlow Condensed',sans-serif;color:#fffdf5}
+  svg.scene{position:absolute;inset:0}
+  .shade{position:absolute;inset:0;background:linear-gradient(90deg,rgba(10,6,20,.92) 0%,rgba(10,6,20,.78) 32%,rgba(10,6,20,.15) 55%,transparent 70%)}
+  .copy{position:absolute;left:64px;top:58px;width:600px}
+  .kicker{display:flex;align-items:center;gap:14px;font-weight:700;font-size:22px;letter-spacing:4px;color:#fffdf5;opacity:.92}
+  .flag{display:flex;width:42px;height:28px;border-radius:4px;overflow:hidden;box-shadow:0 0 0 2px rgba(255,255,255,.25)}
+  .flag i{flex:1}.flag i:nth-child(1),.flag i:nth-child(3){background:#1fa34a}.flag i:nth-child(2){background:#fff}
+  .title{margin:14px 0 0 -6px;font:134px/0.9 'Lilita One',sans-serif;letter-spacing:1px;color:#ffc61a;transform:skewX(-9deg);transform-origin:left bottom;
+    text-shadow:0 2px 0 #e9a400,0 4px 0 #d99600,0 6px 0 #c98a00,0 8px 0 #b77d00,0 10px 0 #a06c00,0 12px 0 #10161a,0 14px 0 #10161a,0 16px 0 #10161a,0 26px 40px rgba(0,0,0,.65),0 0 80px rgba(255,170,30,.35)}
+  .band{display:inline-block;margin-top:26px;padding:6px 26px 8px 22px;background:linear-gradient(180deg,#ff4a38,#ee3b2b);transform:skewX(-14deg);box-shadow:0 6px 0 #a3190e,0 14px 26px rgba(0,0,0,.45)}
+  .band span{display:inline-block;transform:skewX(14deg);font-weight:800;font-size:44px;letter-spacing:5px;color:#fffdf5}
+  .pitch{margin-top:26px;font-weight:600;font-size:31px;line-height:1.18;color:#fffdf5;text-shadow:0 2px 8px rgba(0,0,0,.6)}
+  .pitch b{color:#ffc61a;font-weight:800}
+  .cta{position:absolute;left:64px;bottom:50px;display:flex;align-items:center;gap:18px}
+  .play{font:38px/1 'Lilita One',sans-serif;letter-spacing:1px;padding:14px 34px 17px;border-radius:18px;background:linear-gradient(180deg,#34c862,#1fa34a);
+    box-shadow:0 7px 0 #0f6b2e,0 14px 30px rgba(0,0,0,.5);border:3px solid rgba(255,255,255,.65);text-shadow:0 3px 0 #0f6b2e}
+  .chips{display:flex;gap:10px}
+  .chip{font-weight:700;font-size:21px;letter-spacing:2.5px;padding:8px 14px;border-radius:10px;background:rgba(255,253,245,.1);border:2px solid rgba(255,253,245,.28)}
+  .bubble{position:absolute;left:784px;top:100px;transform:rotate(-7deg);background:#fffdf5;color:#10161a;font:40px/1 'Lilita One',sans-serif;padding:16px 26px 18px;border-radius:22px;
+    border:5px solid #10161a;box-shadow:8px 8px 0 #ee3b2b,0 18px 40px rgba(0,0,0,.5);letter-spacing:.5px;white-space:nowrap}
+  .bubble small{display:block;font:800 20px/1 'Barlow Condensed',sans-serif;letter-spacing:3px;color:#ee3b2b;margin-bottom:6px}
+  .bubble:after{content:'';position:absolute;left:96px;bottom:-34px;width:0;height:0;border-left:22px solid transparent;border-right:22px solid transparent;border-top:34px solid #10161a;transform:skewX(18deg)}
+  .bubble:before{content:'';position:absolute;left:103px;bottom:-21px;width:0;height:0;border-left:15px solid transparent;border-right:15px solid transparent;border-top:24px solid #fffdf5;transform:skewX(18deg);z-index:1}
+  .speed{position:absolute;right:46px;bottom:38px;text-align:right;transform:skewX(-8deg)}
+  .speed .n{font:92px/0.85 'Lilita One',sans-serif;color:#fffdf5;text-shadow:0 5px 0 #10161a,0 0 30px rgba(255,90,60,.6)}
+  .speed .u{font-weight:800;font-size:22px;letter-spacing:4px;color:#ffc61a}
+  .stars{position:absolute;right:52px;top:40px;font:44px/1 'Lilita One',sans-serif;letter-spacing:6px;color:#ffc61a;text-shadow:0 4px 0 #10161a,0 0 22px rgba(255,198,26,.8)}
+  .stars i{font-style:normal;color:rgba(255,253,245,.25);text-shadow:0 4px 0 #10161a}
+</style></head>
+<body><div class="og">
+<svg class="scene" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#160a33"/><stop offset=".35" stop-color="#4a1658"/><stop offset=".62" stop-color="#c2305a"/><stop offset=".85" stop-color="#ff6a3a"/><stop offset="1" stop-color="#ffb24a"/>
+    </linearGradient>
+    <linearGradient id="sun" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff3a8"/><stop offset=".5" stop-color="#ffc61a"/><stop offset="1" stop-color="#ff5a2a"/></linearGradient>
+    <linearGradient id="road" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3a2340"/><stop offset=".4" stop-color="#231a2a"/><stop offset="1" stop-color="#14111a"/></linearGradient>
+    <linearGradient id="glare" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffb24a" stop-opacity=".75"/><stop offset="1" stop-color="#ff6a3a" stop-opacity="0"/></linearGradient>
+    <linearGradient id="win" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4a3a66"/><stop offset=".45" stop-color="#1b1428"/><stop offset=".55" stop-color="#0e0a16"/><stop offset="1" stop-color="#2a1f3c"/></linearGradient>
+    <linearGradient id="body" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#e0a300"/><stop offset=".15" stop-color="#ffc61a"/><stop offset=".8" stop-color="#ffd23f"/><stop offset="1" stop-color="#d69600"/></linearGradient>
+    <radialGradient id="red" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#ff2a2a" stop-opacity=".95"/><stop offset="1" stop-color="#ff2a2a" stop-opacity="0"/></radialGradient>
+    <radialGradient id="blue" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#2a7bff" stop-opacity=".95"/><stop offset="1" stop-color="#2a7bff" stop-opacity="0"/></radialGradient>
+    <radialGradient id="tail" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#ff3b2b" stop-opacity=".9"/><stop offset="1" stop-color="#ff3b2b" stop-opacity="0"/></radialGradient>
+    <filter id="blur6"><feGaussianBlur stdDeviation="6"/></filter>
+    <filter id="blur2"><feGaussianBlur stdDeviation="2"/></filter>
+    <clipPath id="sunclip"><rect x="0" y="0" width="1200" height="330"/></clipPath>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#sky)"/>
+  <g id="starsky"></g>
+  <!-- striped sun -->
+  <g clip-path="url(#sunclip)">
+    <circle cx="1060" cy="285" r="140" fill="#ffc61a" opacity=".25" filter="url(#blur6)"/>
+    <circle cx="1060" cy="285" r="112" fill="url(#sun)"/>
+    <g fill="#c2305a" id="sunstripes"></g>
+  </g>
+  <g id="skyline"></g>
+
+  <!-- ground + road -->
+  <rect y="330" width="1200" height="300" fill="#120b18"/>
+  <polygon id="roadpoly" fill="url(#road)"/>
+  <polygon id="glarepoly" fill="url(#glare)" opacity=".55"/>
+  <g id="lanes"></g>
+  <g id="streaks" stroke="#fffdf5" stroke-linecap="round"></g>
+
+  <!-- police glow -->
+  <circle cx="1200" cy="640" r="260" fill="url(#red)" opacity=".85"/>
+  <circle cx="980" cy="700" r="230" fill="url(#blue)" opacity=".75"/>
+
+  <!-- danfo (rear view) -->
+  <g transform="translate(860 548) rotate(-4) scale(1.02)">
+    <ellipse cx="0" cy="8" rx="190" ry="24" fill="#000" opacity=".55" filter="url(#blur6)"/>
+    <!-- wheels -->
+    <rect x="-150" y="-26" width="52" height="38" rx="8" fill="#0b0a0e"/>
+    <rect x="98" y="-26" width="52" height="38" rx="8" fill="#0b0a0e"/>
+    <!-- body -->
+    <path d="M-160 -40 L-158 -230 Q-156 -262 -126 -266 L126 -266 Q156 -262 158 -230 L160 -40 Z" fill="url(#body)"/>
+    <path d="M-150 -258 L150 -258 L146 -244 L-146 -244 Z" fill="#fff6c8" opacity=".35"/>
+    <!-- roof rack -->
+    <rect x="-130" y="-282" width="260" height="8" rx="3" fill="#10161a"/>
+    <rect x="-118" y="-276" width="8" height="12" fill="#10161a"/><rect x="110" y="-276" width="8" height="12" fill="#10161a"/>
+    <rect x="-96" y="-300" width="120" height="20" rx="4" fill="#1fa34a"/><rect x="-60" y="-314" width="70" height="16" rx="4" fill="#ee3b2b"/>
+    <!-- rear window -->
+    <path d="M-132 -238 L132 -238 L126 -160 L-126 -160 Z" fill="url(#win)" stroke="#10161a" stroke-width="5"/>
+    <path d="M-60 -236 L-20 -236 L-90 -162 L-120 -162 Z" fill="#fff" opacity=".12"/>
+    <!-- passengers silhouettes -->
+    <g fill="#0a0710" opacity=".85">
+      <circle cx="-80" cy="-190" r="16"/><rect x="-100" y="-176" width="40" height="18" rx="8"/>
+      <circle cx="-20" cy="-195" r="15"/><rect x="-38" y="-182" width="36" height="22" rx="8"/>
+      <circle cx="45" cy="-188" r="17"/><rect x="24" y="-174" width="42" height="16" rx="8"/>
+      <circle cx="100" cy="-192" r="14"/><rect x="84" y="-180" width="32" height="20" rx="8"/>
+    </g>
+    <!-- slogan -->
+    <text x="0" y="-131" text-anchor="middle" font-family="Lilita One" font-size="27" fill="#10161a" letter-spacing="1">NO KING AS GOD</text>
+    <!-- black stripes -->
+    <rect x="-159" y="-118" width="318" height="10" fill="#10161a"/>
+    <rect x="-159" y="-100" width="318" height="10" fill="#10161a"/>
+    <!-- tail lights -->
+    <circle cx="-138" cy="-74" r="60" fill="url(#tail)"/>
+    <circle cx="138" cy="-74" r="60" fill="url(#tail)"/>
+    <rect x="-152" y="-90" width="26" height="40" rx="5" fill="#ff3b2b" stroke="#7a0f08" stroke-width="3"/>
+    <rect x="126" y="-90" width="26" height="40" rx="5" fill="#ff3b2b" stroke="#7a0f08" stroke-width="3"/>
+    <rect x="-148" y="-86" width="10" height="16" rx="3" fill="#ffd0c8"/>
+    <rect x="130" y="-86" width="10" height="16" rx="3" fill="#ffd0c8"/>
+    <!-- plate -->
+    <rect x="-52" y="-86" width="104" height="38" rx="5" fill="#f4f6ef" stroke="#10161a" stroke-width="3"/>
+    <text x="0" y="-74" text-anchor="middle" font-family="Barlow Condensed" font-weight="800" font-size="10" fill="#1fa34a" letter-spacing="2">LAGOS</text>
+    <text x="0" y="-55" text-anchor="middle" font-family="Barlow Condensed" font-weight="800" font-size="21" fill="#10161a" letter-spacing="1">EKO 504 MN</text>
+    <!-- bumper -->
+    <rect x="-168" y="-44" width="336" height="22" rx="6" fill="#1a1820"/>
+    <rect x="-168" y="-44" width="336" height="5" rx="2" fill="#4a4652"/>
+    <!-- exhaust smoke -->
+    <g fill="#c9b8d8" opacity=".35" filter="url(#blur6)"><circle cx="118" cy="-14" r="18"/><circle cx="150" cy="-4" r="24"/><circle cx="190" cy="4" r="28"/></g>
+  </g>
+
+  <!-- sparks -->
+  <g id="sparks" stroke-linecap="round"></g>
+</svg>
+<div class="shade"></div>
+
+<div class="copy">
+  <div class="kicker"><span class="flag"><i></i><i></i><i></i></span>3D STREET RACER · LAGOS &amp; ABUJA</div>
+  <div class="title">MAINLAND</div>
+  <div class="band"><span>NAIJA STREET RACING</span></div>
+  <div class="pitch">Dodge <b>danfos</b>. Outrun <b>olokpa</b>.<br>Bump twice, race for the road.</div>
+</div>
+<div class="cta">
+  <div class="play">PLAY FREE ▸</div>
+  <div class="chips"><span class="chip">IN YOUR BROWSER</span></div>
+</div>
+<div class="bubble"><small>DANFO DRIVER</small>NA ME GET ROAD!</div>
+<div class="stars">★★<i>★</i></div>
+<div class="speed"><div class="n">187</div><div class="u">KM/H · NITRO</div></div>
+</div>
+
+<script>
+const NS='http://www.w3.org/2000/svg';
+const el=(t,a,p)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);p.appendChild(e);return e};
+let s=7;const r=()=>(s=(s*16807)%2147483647)/2147483647;
+const H=330, VX=830;
+// stars
+const st=document.getElementById('starsky');
+for(let i=0;i<70;i++)el('circle',{cx:r()*1200,cy:r()*170,r:r()*1.4+.3,fill:'#fff',opacity:.3+r()*.6},st);
+// sun stripes
+const ss=document.getElementById('sunstripes');
+for(let i=0;i<7;i++){const y=262+i*11,h=2+i*1.3;el('rect',{x:940,y:y-10,width:240,height:h},ss)}
+// skyline
+const sk=document.getElementById('skyline');
+function row(color,minH,maxH,winOp,seed){s=seed;let x=-20;while(x<1220){const w=40+r()*70,h=minH+r()*(maxH-minH);
+  const near=Math.abs(x+w/2-VX)<110; const hh=near?h*.45:h;
+  el('rect',{x,y:H-hh,width:w,height:hh+1,fill:color},sk);
+  if(r()<.25)el('rect',{x:x+w*.4,y:H-hh-18,width:3,height:18,fill:color},sk);
+  for(let wy=H-hh+8;wy<H-6;wy+=12)for(let wx=x+6;wx<x+w-8;wx+=11)if(r()<winOp)el('rect',{x:wx,y:wy,width:5,height:6,fill:r()<.7?'#ffd36a':'#ff9f5a',opacity:.55+r()*.45},sk);
+  x+=w+r()*6}}
+row('#3a1440',60,150,.06,11);
+row('#1c0a24',30,110,.14,23);
+// footbridge
+el('rect',{x:560,y:300,width:540,height:9,fill:'#10161a'},sk);
+for(const fx of[600,1060])el('rect',{x:fx,y:300,width:7,height:30,fill:'#10161a'},sk);
+// road perspective
+const P=(x,depth)=>VX+(x-VX)*depth; // depth: 0 at horizon -> 1 at bottom
+const yAt=d=>H+(630-H)*d;
+document.getElementById('roadpoly').setAttribute('points',`${VX-30},${H} ${VX+30},${H} ${VX+700},630 ${VX-700},630`);
+document.getElementById('glarepoly').setAttribute('points',`${VX-14},${H} ${VX+14},${H} ${VX+160},630 ${VX-160},630`);
+const ln=document.getElementById('lanes');
+for(const off of[-680,680])el('polygon',{points:`${VX+off*0.04},${H} ${VX+off*0.044},${H} ${VX+off+(off>0?14:-14)},630 ${VX+off},630`,fill:'#fffdf5',opacity:.8},ln);
+for(const off of[-260,260]){for(let i=0;i<12;i++){const d1=Math.pow((i+0.1)/11,2.2),d2=Math.pow((i+0.55)/11,2.2);if(d2>1)break;
+  const w1=7*d1,w2=7*d2,x1=VX+off*d1,x2=VX+off*d2;
+  el('polygon',{points:`${x1-w1},${yAt(d1)} ${x1+w1},${yAt(d1)} ${x2+w2},${yAt(d2)} ${x2-w2},${yAt(d2)}`,fill:'#fffdf5',opacity:.85},ln)}}
+// speed streaks
+const sg=document.getElementById('streaks');
+s=99;for(let i=0;i<46;i++){const a=r()*Math.PI*2,r0=260+r()*200,r1=r0+120+r()*260;const x1=VX+Math.cos(a)*r0,y1=H+Math.sin(a)*r0*.55,x2=VX+Math.cos(a)*r1,y2=H+Math.sin(a)*r1*.55;
+  if(x1<560&&y1<500)continue;el('line',{x1,y1,x2,y2,'stroke-width':1+r()*2.5,opacity:.12+r()*.28},sg)}
+// sparks off the bumper
+const sp=document.getElementById('sparks');
+el('circle',{cx:706,cy:536,r:34,fill:'#ffb23a',opacity:.55,filter:'url(#blur6)'},sp);
+el('circle',{cx:706,cy:536,r:9,fill:'#fff6d0'},sp);
+s=5;for(let i=0;i<34;i++){const a=Math.PI*(0.9+r()*0.55),len=18+r()*70,x=706,y=536;
+  const x2=x+Math.cos(a)*len,y2=y+Math.sin(a)*len*.8;
+  el('line',{x1:x+Math.cos(a)*8,y1:y+Math.sin(a)*8,x2,y2,stroke:r()<.4?'#fff3b0':(r()<.6?'#ffc61a':'#ff7a2a'),'stroke-width':1+r()*2.2,opacity:.75+r()*.25},sp)}
+</script>
+</body></html>

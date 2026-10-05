@@ -1,0 +1,10 @@
+{
+  "name": "Mainland — Naija Street Racing",
+  "short_name": "Mainland",
+  "start_url": "/",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#0d1416",
+  "theme_color": "#0d1416",
+  "icons": [{ "src": "/mainland.svg", "sizes": "any", "type": "image/svg+xml" }]
+}
