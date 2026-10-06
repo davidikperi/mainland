@@ -29,7 +29,7 @@ async function load() {
       try { sessionStorage.removeItem(KEY) } catch { /* private mode */ }
       const { error } = await res.json().catch(() => ({}))
       // 'missing' means a proxy in front of the server dropped the token headers; 'wrong' means this server instance has a different token.
-      return login(!token ? '' : error === 'missing' ? 'The server never received the token: a proxy in front of it is stripping the headers.' : 'That token is not right for this server. Use the token from the latest start-up log, or set ADMIN_TOKEN.')
+      return login(!token ? '' : error === 'missing' ? 'The server never received the token: a proxy in front of it is stripping the headers.' : 'That token is not right for this server. Without ADMIN_TOKEN set, the token changes every time the server restarts; use the one from the latest start-up log, or set ADMIN_TOKEN on your host to keep it fixed.')
     }
     render(await res.json(), true)
   } catch { render(null, false) }

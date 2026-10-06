@@ -12,6 +12,8 @@ dist
 dist-ssr
 *.local
 
+marketing
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -25,3 +27,6 @@ dist-ssr
 
 # Admin stats and the admin token (secret)
 data/
+
+# Local secrets such as DATABASE_URL
+.env

@@ -1,10 +1,10 @@
 // Ephemeral, single-server guest multiplayer. No device location is collected.
 import { createStats, givenToken } from './stats.js'
-export function createWorld({ statsFile = null, tokenFile = null, token } = {}) {
+export function createWorld({ statsFile = null, tokenFile = null, token, initial = null, persist = null } = {}) {
   const players = new Map(), clients = new Map(), bumps = new Map()
   // Admin statistics. Each driver ID maps to an anonymous device ID; kept a little after disconnect so a
   // last event (busted, wrecked) sent as the drive ends still counts.
-  const stats = createStats({ file: statsFile, tokenFile, token }), deviceOf = new Map(), eventTimes = new Map()
+  const stats = createStats({ file: statsFile, tokenFile, token, initial, persist }), deviceOf = new Map(), eventTimes = new Map()
   const send = (res, events = []) => res.write(`data: ${JSON.stringify({ players: [...players.values()], events })}\n\n`)
   const timer = setInterval(() => {
     for (const [id,p] of players) if (Date.now() - p.updated > 5000) players.delete(id)
@@ -62,5 +62,5 @@ export function createWorld({ statsFile = null, tokenFile = null, token } = {}) 
       return reply(404,{error:'Not found'})
     } catch { if(!res.headersSent)reply(400,{error:'Invalid request'}) }
   }
-  return { middleware, stats, close(){clearInterval(timer);stats.close();for(const res of clients.values())res.end();clients.clear();players.clear()} }
+  return { middleware, stats, close(){clearInterval(timer);const saved=stats.close();for(const res of clients.values())res.end();clients.clear();players.clear();return saved} }
 }

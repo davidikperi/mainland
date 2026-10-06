@@ -37,6 +37,11 @@ test('admin token: whitespace and quotes around ADMIN_TOKEN are ignored',()=>{
     assert.ok(s.authorized({headers:{authorization:'Bearer secret-token'}}));s.close()
   }
 })
+test('admin stats: loaded from and saved to a database store',async()=>{
+  const saved=[],s=createStats({token:'t',initial:{totals:{sessions:41,runs:7,playSeconds:0,events:{}},devices:{}},persist:async d=>{saved.push(JSON.parse(JSON.stringify(d)))}})
+  s.connect('dev1');assert.equal(s.snapshot().totals.sessions,42)
+  await s.close();assert.equal(saved.length,1);assert.equal(saved[0].totals.sessions,42);assert.ok(saved[0].devices.dev1)
+})
 test('admin stats: sessions, live drivers, events and a token-protected endpoint',async()=>{
   const world=createWorld({token:'secret-token'}),server=createServer((req,res)=>world.middleware(req,res,()=>{res.writeHead(404);res.end()}))
   await new Promise(r=>server.listen(0,'127.0.0.1',r))

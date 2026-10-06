@@ -1,0 +1,374 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<!-- Mainland 15-second launch video. draw(t) paints the frame at t seconds; render.mjs steps it at 30 fps. -->
+<link href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Barlow+Condensed:wght@600;700;800&display=block" rel="stylesheet">
+<style>html,body{margin:0;background:#000}canvas{display:block}</style>
+</head><body><canvas id="c" width="1920" height="1080"></canvas>
+<script>
+const C = document.getElementById('c'), x = C.getContext('2d')
+const W = 1920, H = 1080, HZ = 470, VX = 960, Z0 = 4
+const BEAT = 60 / 128, b = n => n * BEAT
+// Every cut lands on the 128 BPM soundtrack (gen-audio.mjs uses the same beats).
+const T = { flash: b(4), horn: b(7), hit1: b(11), hit2: b(13), race: b(14), police: b(16), nitro: b(20), title: b(22), band: b(23), kicker: b(24), cta: b(25), end: b(30) }
+const YELLOW = '#ffc61a', WHITE = '#fffdf5', INK = '#10161a', RED = '#ee3b2b', GREEN = '#1fa34a'
+const clamp = (v, a = 0, c = 1) => Math.max(a, Math.min(c, v)), lerp = (a, c, t) => a + (c - a) * t
+const prog = (t, a, d) => clamp((t - a) / d)
+const ease = { out: t => 1 - Math.pow(1 - t, 3), inOut: t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2, back: t => { const c1 = 2.2, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2) } }
+const hash = n => { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s) }
+
+// Speed in km/h, shared with the engine sound.
+function speed(t) {
+  if (t < T.flash) return 0
+  if (t < b(10)) return lerp(92, 118, prog(t, T.flash, b(6)))
+  if (t < T.nitro) { let s = lerp(118, 136, prog(t, b(10), b(10))); for (const h of [T.hit1, T.hit2]) if (t > h) s -= 16 * Math.exp(-(t - h) * 3); return s }
+  if (t < T.title) return lerp(136, 187, ease.out(prog(t, T.nitro, .5)))
+  return lerp(187, 120, ease.out(prog(t, T.title, 1.2)))
+}
+function travel(t) { let d = 0; for (let s = 0; s < t; s += 1 / 120) d += speed(s) / 3.6 * 1.8 / 120; return d }
+const depth = z => Z0 / z, groundY = d => HZ + (H - HZ) * d
+
+// ---------- static layers, painted once ----------
+function layer(fn) { const c = document.createElement('canvas'); c.width = W + 200; c.height = H; fn(c.getContext('2d')); return c }
+let skyLayer, skylineLayer
+function buildLayers() {
+  skyLayer = layer(g => {
+    const sky = g.createLinearGradient(0, 0, 0, HZ)
+    for (const [o, c] of [[0, '#160a33'], [.35, '#4a1658'], [.62, '#c2305a'], [.85, '#ff6a3a'], [1, '#ffb24a']]) sky.addColorStop(o, c)
+    g.fillStyle = sky; g.fillRect(0, 0, W + 200, HZ + 2)
+    for (let i = 0; i < 160; i++) { g.globalAlpha = .25 + hash(i * 3) * .6; g.fillStyle = '#fff'; g.beginPath(); g.arc(hash(i) * (W + 200), hash(i + 99) * 260, hash(i + 7) * 2 + .4, 0, 7); g.fill() }
+    g.globalAlpha = 1
+    g.save(); g.beginPath(); g.rect(0, 0, W + 200, HZ); g.clip()
+    g.filter = 'blur(30px)'; g.fillStyle = 'rgba(255,198,26,.35)'; g.beginPath(); g.arc(VX + 100, HZ - 70, 300, 0, 7); g.fill(); g.filter = 'none'
+    const sun = g.createLinearGradient(0, HZ - 330, 0, HZ + 190); sun.addColorStop(0, '#fff3a8'); sun.addColorStop(.5, YELLOW); sun.addColorStop(1, '#ff5a2a')
+    g.fillStyle = sun; g.beginPath(); g.arc(VX + 100, HZ - 70, 250, 0, 7); g.fill()
+    g.fillStyle = '#c2305a'; for (let i = 0; i < 8; i++) g.fillRect(VX + 100 - 260, HZ - 150 + i * 20, 520, 3 + i * 2.2)
+    g.restore()
+  })
+  skylineLayer = layer(g => {
+    const row = (color, minH, maxH, winOp, seed) => {
+      let xx = -20, k = seed
+      while (xx < W + 220) {
+        const w = 60 + hash(k++) * 110, near = Math.abs(xx + w / 2 - VX - 100) < 200, h = (minH + hash(k++) * (maxH - minH)) * (near ? .5 : 1)
+        g.fillStyle = color; g.fillRect(xx, HZ - h, w, h + 2)
+        if (hash(k++) < .25) g.fillRect(xx + w * .4, HZ - h - 28, 5, 28)
+        for (let wy = HZ - h + 12; wy < HZ - 10; wy += 18) for (let wx = xx + 9; wx < xx + w - 12; wx += 16) if (hash(k++) < winOp) { g.globalAlpha = .55 + hash(k++) * .45; g.fillStyle = hash(k++) < .7 ? '#ffd36a' : '#ff9f5a'; g.fillRect(wx, wy, 7, 9); g.globalAlpha = 1 }
+        xx += w + hash(k++) * 10
+      }
+    }
+    row('#3a1440', 90, 240, .06, 11); row('#1c0a24', 50, 170, .14, 5000)
+  })
+}
+
+// ---------- the road ----------
+function drawWorld(t) {
+  const tr = travel(t)
+  x.drawImage(skyLayer, -100 - t * 3, 0)
+  x.drawImage(skylineLayer, -100 - t * 7, 0)
+  x.fillStyle = '#120b18'; x.fillRect(0, HZ, W, H - HZ)
+  const road = x.createLinearGradient(0, HZ, 0, H); road.addColorStop(0, '#3a2340'); road.addColorStop(.4, '#231a2a'); road.addColorStop(1, '#14111a')
+  x.fillStyle = road; x.beginPath(); x.moveTo(VX - 40, HZ); x.lineTo(VX + 40, HZ); x.lineTo(VX + 1250 * 1.4, H + 300); x.lineTo(VX - 1250 * 1.4, H + 300); x.fill()
+  const glare = x.createLinearGradient(0, HZ, 0, H); glare.addColorStop(0, 'rgba(255,178,74,.55)'); glare.addColorStop(1, 'rgba(255,106,58,0)')
+  x.fillStyle = glare; x.beginPath(); x.moveTo(VX + 80, HZ); x.lineTo(VX + 120, HZ); x.lineTo(VX + 420, H); x.lineTo(VX - 200, H); x.fill()
+  // edge lines and lane dashes
+  x.fillStyle = WHITE
+  for (const off of [-1200, 1200]) { x.globalAlpha = .8; x.beginPath(); x.moveTo(VX + off * .033, HZ); x.lineTo(VX + off * .036, HZ); x.lineTo(VX + off * 1.02 + (off > 0 ? 24 : -24), H); x.lineTo(VX + off * 1.02, H); x.fill() }
+  const P = 10
+  for (let k = 0; k < 30; k++) {
+    const z1 = k * P - (tr % P) + 1.2, z2 = z1 + 3.5; if (z1 < 1.2) continue
+    const d1 = depth(z1), d2 = depth(z2)
+    for (const off of [-400, 400]) {
+      x.globalAlpha = .9 * clamp(d2 * 6); x.beginPath()
+      x.moveTo(VX + off * d1 - 18 * d1, groundY(d1)); x.lineTo(VX + off * d1 + 18 * d1, groundY(d1)); x.lineTo(VX + off * d2 + 18 * d2, groundY(d2)); x.lineTo(VX + off * d2 - 18 * d2, groundY(d2)); x.fill()
+    }
+  }
+  x.globalAlpha = 1
+  // streetlights, far to near
+  const PP = 28
+  for (let k = 14; k >= 0; k--) {
+    const z = k * PP - (tr % PP) + 3; if (z < 1.4) continue
+    const d = depth(z), gy = groundY(d), fade = clamp(d * 5)
+    for (const side of [-1, 1]) {
+      const px = VX + side * 1500 * d, top = gy - 1800 * d
+      x.globalAlpha = fade; x.fillStyle = '#0b0710'; x.fillRect(px - 7 * d, top, 14 * d, gy - top)
+      x.fillRect(Math.min(px, px - side * 300 * d), top, 300 * d, 10 * d)
+      const lx = px - side * 290 * d, glow = x.createRadialGradient(lx, top + 14 * d, 0, lx, top + 14 * d, 120 * d)
+      glow.addColorStop(0, 'rgba(255,214,120,.95)'); glow.addColorStop(1, 'rgba(255,170,60,0)')
+      x.fillStyle = glow; x.beginPath(); x.arc(lx, top + 14 * d, 120 * d, 0, 7); x.fill()
+    }
+  }
+  // overhead footbridges
+  const FP = 150
+  for (let k = 3; k >= 0; k--) {
+    const z = k * FP - ((tr + 60) % FP) + 3; if (z < 1.2) continue
+    const d = depth(z), gy = groundY(d), deck = gy - 1250 * d, fade = clamp(d * 4)
+    x.globalAlpha = fade; x.fillStyle = '#0b0710'
+    x.fillRect(VX - 1700 * d, deck, 3400 * d, 90 * d)
+    for (const side of [-1, 1]) x.fillRect(VX + side * 1600 * d - 20 * d, deck, 40 * d, gy - deck)
+    x.fillStyle = '#0f6b2e'; x.fillRect(VX - 330 * d, deck + 90 * d, 660 * d, 130 * d)
+    x.strokeStyle = '#fff'; x.lineWidth = 6 * d; x.strokeRect(VX - 320 * d, deck + 98 * d, 640 * d, 114 * d)
+    x.fillStyle = '#fff'; x.font = `800 ${74 * d}px "Barlow Condensed"`; x.textAlign = 'center'; x.fillText(k % 2 ? 'HERBERT MACAULAY →' : 'IKORODU RD →', VX, deck + 185 * d)
+  }
+  x.globalAlpha = 1
+}
+
+// Speed streaks rushing out of the vanishing point.
+function streaks(t, amount, color = '255,253,245') {
+  if (amount <= 0) return
+  x.save(); x.lineCap = 'round'
+  for (let i = 0; i < 90; i++) {
+    const a = hash(i) * Math.PI * 2, ph = (t * (1.1 + hash(i + 9) * 1.4) + hash(i + 3)) % 1, r0 = lerp(160, 1500, ph * ph), len = 60 + ph * 420 * amount
+    const cx = Math.cos(a), cy = Math.sin(a) * .62
+    x.strokeStyle = `rgba(${color},${ph * .5 * amount})`; x.lineWidth = 1 + hash(i + 5) * 3.5 * amount
+    x.beginPath(); x.moveTo(VX + cx * r0, HZ + cy * r0); x.lineTo(VX + cx * (r0 + len), HZ + cy * (r0 + len)); x.stroke()
+  }
+  x.restore()
+}
+
+// ---------- the danfo ----------
+function danfoState(t) {
+  if (t < T.flash || t > T.nitro + .9) return null
+  let z, off = 0, tilt = 0
+  if (t < b(6.2)) { z = lerp(80, 17, ease.out(prog(t, T.flash, b(2.2)))); off = 800 }
+  else if (t < b(7.3)) { const p = prog(t, b(6.2), b(1.1)); z = lerp(17, 12, p); off = lerp(800, 0, ease.inOut(p)); tilt = -Math.sin(p * Math.PI) * .07 }
+  else if (t < b(10)) z = 12 + Math.sin(t * 3) * .3
+  else if (t < T.race) {
+    z = lerp(12, 7.2, prog(t, b(10), b(1)))
+    for (const h of [T.hit1, T.hit2]) if (t > h) z += 2.4 * ease.out(prog(t, h, .18)) - 1.2 * prog(t, h + .18, .7)
+    if (t > T.hit1) tilt = .03 * Math.sin((t - T.hit1) * 25) * Math.exp(-(t - T.hit1) * 4)
+  }
+  else if (t < T.nitro) { z = lerp(danfoState(T.race - 1e-4).z, 13, ease.out(prog(t, T.race, b(2)))); off = Math.sin((t - T.race) * 2.2) * 90 }
+  else { const p = prog(t, T.nitro, .85); z = lerp(13, 2.2, ease.inOut(p)); off = lerp(Math.sin((T.nitro - T.race) * 2.2) * 90, 1100, ease.out(prog(t, T.nitro, .35))); tilt = .04 * p }
+  return { z, off, tilt }
+}
+function drawDanfo(s, brake) {
+  x.save(); x.filter = 'blur(10px)'; x.fillStyle = 'rgba(0,0,0,.6)'; x.beginPath(); x.ellipse(0, 8, 200, 26, 0, 0, 7); x.fill(); x.filter = 'none'
+  x.fillStyle = '#0b0a0e'; x.beginPath(); x.roundRect(-150, -26, 52, 38, 8); x.roundRect(98, -26, 52, 38, 8); x.fill()
+  const body = x.createLinearGradient(-160, 0, 160, 0); body.addColorStop(0, '#e0a300'); body.addColorStop(.15, YELLOW); body.addColorStop(.8, '#ffd23f'); body.addColorStop(1, '#d69600')
+  x.fillStyle = body; x.beginPath(); x.moveTo(-160, -40); x.lineTo(-158, -230); x.quadraticCurveTo(-156, -262, -126, -266); x.lineTo(126, -266); x.quadraticCurveTo(156, -262, 158, -230); x.lineTo(160, -40); x.fill()
+  x.fillStyle = 'rgba(255,246,200,.35)'; x.beginPath(); x.moveTo(-150, -258); x.lineTo(150, -258); x.lineTo(146, -244); x.lineTo(-146, -244); x.fill()
+  x.fillStyle = INK; x.beginPath(); x.roundRect(-130, -282, 260, 8, 3); x.fill(); x.fillRect(-118, -276, 8, 12); x.fillRect(110, -276, 8, 12)
+  x.fillStyle = GREEN; x.beginPath(); x.roundRect(-96, -300, 120, 20, 4); x.fill(); x.fillStyle = RED; x.beginPath(); x.roundRect(-60, -314, 70, 16, 4); x.fill()
+  const win = x.createLinearGradient(-132, -238, 132, -160); win.addColorStop(0, '#4a3a66'); win.addColorStop(.45, '#1b1428'); win.addColorStop(.55, '#0e0a16'); win.addColorStop(1, '#2a1f3c')
+  x.fillStyle = win; x.strokeStyle = INK; x.lineWidth = 5; x.beginPath(); x.moveTo(-132, -238); x.lineTo(132, -238); x.lineTo(126, -160); x.lineTo(-126, -160); x.closePath(); x.fill(); x.stroke()
+  x.fillStyle = 'rgba(255,255,255,.12)'; x.beginPath(); x.moveTo(-60, -236); x.lineTo(-20, -236); x.lineTo(-90, -162); x.lineTo(-120, -162); x.fill()
+  x.fillStyle = 'rgba(10,7,16,.85)'
+  for (const [cx, cy, r, w] of [[-80, -190, 16, 40], [-20, -195, 15, 36], [45, -188, 17, 42], [100, -192, 14, 32]]) { x.beginPath(); x.arc(cx, cy, r, 0, 7); x.fill(); x.beginPath(); x.roundRect(cx - w / 2, cy + 14, w, 20, 8); x.fill() }
+  x.fillStyle = INK; x.font = '27px "Lilita One"'; x.textAlign = 'center'; x.fillText('NO KING AS GOD', 0, -131)
+  x.fillRect(-159, -118, 318, 10); x.fillRect(-159, -100, 318, 10)
+  for (const sx of [-138, 138]) { const g = x.createRadialGradient(sx, -70, 0, sx, -70, brake ? 110 : 60); g.addColorStop(0, `rgba(255,59,43,${brake ? 1 : .8})`); g.addColorStop(1, 'rgba(255,59,43,0)'); x.fillStyle = g; x.beginPath(); x.arc(sx, -70, brake ? 110 : 60, 0, 7); x.fill() }
+  x.fillStyle = brake ? '#ff6a55' : '#ff3b2b'; x.strokeStyle = '#7a0f08'; x.lineWidth = 3
+  for (const lx of [-152, 126]) { x.beginPath(); x.roundRect(lx, -90, 26, 40, 5); x.fill(); x.stroke() }
+  x.fillStyle = '#ffd0c8'; x.beginPath(); x.roundRect(-148, -86, 10, 16, 3); x.roundRect(130, -86, 10, 16, 3); x.fill()
+  x.fillStyle = '#f4f6ef'; x.strokeStyle = INK; x.beginPath(); x.roundRect(-52, -86, 104, 38, 5); x.fill(); x.stroke()
+  x.fillStyle = GREEN; x.font = '800 10px "Barlow Condensed"'; x.fillText('LAGOS', 0, -74)
+  x.fillStyle = INK; x.font = '800 21px "Barlow Condensed"'; x.fillText('EKO 504 MN', 0, -55)
+  x.fillStyle = '#1a1820'; x.beginPath(); x.roundRect(-168, -44, 336, 22, 6); x.fill(); x.fillStyle = '#4a4652'; x.fillRect(-168, -44, 336, 5)
+  x.restore()
+}
+function danfo(t) {
+  const st = danfoState(t); if (!st || st.z < 2.4) return null
+  const d = depth(st.z), s = d * 3.4, sx = VX + st.off * d, sy = groundY(d) + Math.sin(t * 14) * 2 * s
+  const brake = (t > b(6.8) && t < b(9)) || (t > T.hit1 && t < T.hit1 + .5) || (t > T.hit2 && t < T.hit2 + .5)
+  x.save(); x.translate(sx, sy); x.rotate(st.tilt); x.scale(s, s); drawDanfo(s, brake); x.restore()
+  return { sx, sy, s, tipX: sx + 110 * s, tipY: sy - 275 * s }
+}
+
+// ---------- effects ----------
+function sparks(t, ox, oy, t0, scale) {
+  const dt = t - t0; if (dt < 0 || dt > .9) return
+  x.save(); x.globalCompositeOperation = 'lighter'; x.lineCap = 'round'
+  const core = x.createRadialGradient(ox, oy, 0, ox, oy, 140 * scale); core.addColorStop(0, `rgba(255,246,208,${1 - dt * 2})`); core.addColorStop(1, 'rgba(255,150,40,0)')
+  x.fillStyle = core; x.beginPath(); x.arc(ox, oy, 140 * scale, 0, 7); x.fill()
+  for (let i = 0; i < 70; i++) {
+    const a = Math.PI * (1.05 + hash(i + t0) * .9), v = (300 + hash(i * 7 + t0) * 900) * scale, px = ox + Math.cos(a) * v * dt, py = oy + Math.sin(a) * v * dt + 900 * dt * dt * scale
+    const tail = .035, qx = ox + Math.cos(a) * v * (dt - tail), qy = oy + Math.sin(a) * v * (dt - tail) + 900 * (dt - tail) ** 2 * scale
+    x.strokeStyle = hash(i + 3) < .4 ? `rgba(255,243,176,${1 - dt / .9})` : `rgba(255,${150 + hash(i) * 80 | 0},40,${1 - dt / .9})`; x.lineWidth = (1.5 + hash(i + 1) * 3) * scale
+    x.beginPath(); x.moveTo(qx, qy); x.lineTo(px, py); x.stroke()
+  }
+  x.restore()
+}
+function shake(t) {
+  let a = 0
+  for (const [t0, amp] of [[T.flash, 10], [T.hit1, 26], [T.hit2, 32], [T.nitro, 14], [T.title, 30], [T.end, 10]]) if (t >= t0) a += amp * Math.exp(-(t - t0) * 10)
+  return [Math.sin(t * 91) * a, Math.cos(t * 77) * a * .7]
+}
+function flash(t) {
+  let a = 0
+  for (const [t0, amp, d] of [[T.flash, 1, .45], [T.hit1, .45, .25], [T.hit2, .55, .25], [T.title, .9, .4], [T.end, .35, .3]]) if (t >= t0) a = Math.max(a, amp * Math.exp(-(t - t0) / d * 3))
+  return a
+}
+function policeLights(t, amount) {
+  if (amount <= 0) return
+  const phase = Math.floor(t / (BEAT / 2)) % 2
+  x.save(); x.globalCompositeOperation = 'lighter'
+  for (const [cx, col, on] of [[-80, '255,40,40', phase === 0], [W + 80, '40,110,255', phase === 1]]) {
+    const r = 1000, g = x.createRadialGradient(cx, H * .62, 0, cx, H * .62, r)
+    g.addColorStop(0, `rgba(${col},${(on ? .85 : .25) * amount})`); g.addColorStop(1, `rgba(${col},0)`)
+    x.fillStyle = g; x.fillRect(0, 0, W, H)
+  }
+  x.restore()
+}
+
+// ---------- type ----------
+const EXT = { [YELLOW]: ['#e9a400', '#d99600', '#c98a00', '#b77d00', '#a06c00'], [WHITE]: ['#e8e2d0', '#d4cdb8', '#bfb7a0', '#a8a088', '#918970'], '#9fd0ff': ['#7fb6f0', '#5f9ae0', '#4a82cc', '#3a6db5', '#2c5a9c'] }
+function chunky(str, size, fill) {
+  const k = size / 146, ext = EXT[fill]
+  x.font = `${size}px "Lilita One"`
+  x.save(); x.shadowColor = 'rgba(0,0,0,.65)'; x.shadowBlur = 50 * k; x.shadowOffsetY = 26 * k; x.fillStyle = INK; x.fillText(str, 0, 16 * k); x.restore()
+  for (let i = 8; i >= 1; i--) { x.fillStyle = i > 5 ? INK : ext[i - 1]; x.fillText(str, 0, i * 2 * k) }
+  x.fillStyle = fill; x.fillText(str, 0, 0)
+}
+function caption(t, str, t0, t1, px, py, size = 170, fill = YELLOW, align = 'left') {
+  if (t < t0 || t > t1 + .2) return
+  const pin = prog(t, t0, .24), pout = prog(t, t1, .18), sc = lerp(1.8, 1, ease.back(pin)), a = Math.min(prog(t, t0, .05), 1 - pout)
+  x.save(); x.globalAlpha = a; x.translate(px - ease.out(pout) * 160, py); x.scale(sc, sc); x.transform(1, 0, -.16, 1, 0, 0); x.textAlign = align; chunky(str, size, fill); x.restore()
+}
+function bubble(t, cx, cy, label, text, t0, t1) {
+  if (t < t0 || t > t1) return
+  const p = ease.back(prog(t, t0, .25)), a = 1 - prog(t, t1 - .12, .12)
+  x.save(); x.globalAlpha = a; x.translate(cx, cy); x.rotate(-.07); x.scale(p, p)
+  x.font = '70px "Lilita One"'; const w = x.measureText(text).width + 90, h = 150, bx = -110, by = -h - 60
+  x.fillStyle = RED; x.beginPath(); x.roundRect(bx + 14, by + 14, w, h, 32); x.fill()
+  x.fillStyle = INK; x.beginPath(); x.roundRect(bx - 8, by - 8, w + 16, h + 16, 38); x.fill()
+  x.beginPath(); x.moveTo(bx + 70, by + h); x.lineTo(bx + 150, by + h); x.lineTo(bx + 96, by + h + 72); x.fill()
+  x.fillStyle = WHITE; x.beginPath(); x.roundRect(bx, by, w, h, 30); x.fill()
+  x.beginPath(); x.moveTo(bx + 84, by + h - 2); x.lineTo(bx + 136, by + h - 2); x.lineTo(bx + 100, by + h + 46); x.fill()
+  x.textAlign = 'left'; x.fillStyle = RED; x.font = '800 30px "Barlow Condensed"'; x.letterSpacing = '5px'; x.fillText(label, bx + 46, by + 50); x.letterSpacing = '0px'
+  x.fillStyle = INK; x.font = '70px "Lilita One"'; x.fillText(text, bx + 44, by + 122)
+  x.restore()
+}
+
+// ---------- HUD (looks like the game's own) ----------
+function hud(t) {
+  const a = Math.min(prog(t, T.flash + .3, .3), 1 - prog(t, T.title, .2)); if (a <= 0) return
+  x.save(); x.globalAlpha = a
+  // street sign
+  x.fillStyle = '#17733d'; x.strokeStyle = WHITE; x.lineWidth = 5; x.beginPath(); x.roundRect(48, 44, 380, 104, 12); x.fill(); x.stroke()
+  x.fillStyle = WHITE; x.textAlign = 'left'; x.font = '800 48px "Barlow Condensed"'; x.fillText('IKORODU ROAD', 74, 102)
+  x.font = '700 22px "Barlow Condensed"'; x.letterSpacing = '4px'; x.globalAlpha = a * .85; x.fillText('ONIPANU · LOS', 74, 132); x.letterSpacing = '0px'; x.globalAlpha = a
+  // speedometer
+  const gx = 1720, gy = 900, r = 120, sp = speed(t), arc = Math.PI * 1.5
+  x.lineCap = 'round'; x.lineWidth = 22; x.strokeStyle = 'rgba(10,20,24,.7)'; x.beginPath(); x.arc(gx, gy, r, Math.PI * .75, Math.PI * .75 + arc); x.stroke()
+  x.strokeStyle = t > T.nitro ? '#7fc4ff' : YELLOW; x.beginPath(); x.arc(gx, gy, r, Math.PI * .75, Math.PI * .75 + arc * clamp(sp / 200)); x.stroke()
+  x.fillStyle = WHITE; x.textAlign = 'center'; x.font = '96px "Lilita One"'; x.fillText(Math.round(sp), gx, gy + 24)
+  x.font = '800 22px "Barlow Condensed"'; x.letterSpacing = '4px'; x.fillText('KM/H', gx + 4, gy + 58); x.letterSpacing = '0px'
+  // wanted stars, one per beat
+  if (t > T.police - .05) for (let i = 0; i < 3; i++) {
+    const on = t > T.police + b(i), p = ease.back(prog(t, T.police + b(i), .2)), blink = Math.floor(t / .25) % 2
+    x.save(); x.translate(VX - 90 + i * 90, 92); x.scale(on ? lerp(1.8, 1, p) : 1, on ? lerp(1.8, 1, p) : 1)
+    x.font = '84px "Lilita One"'; x.fillStyle = INK; x.fillText('★', 0, 30); x.fillStyle = on ? (blink ? RED : YELLOW) : 'rgba(255,255,255,.25)'; x.fillText('★', 0, 24); x.restore()
+  }
+  // race card
+  if (t > T.race) {
+    const p = ease.back(prog(t, T.race, .25)), first = t > T.nitro + .45
+    x.save(); x.translate(348, 170); x.scale(p, p)
+    x.fillStyle = 'rgba(10,18,22,.72)'; x.strokeStyle = YELLOW; x.lineWidth = 5; x.beginPath(); x.roundRect(-300, 0, 600, 116, 22); x.fill(); x.stroke()
+    x.fillStyle = first ? GREEN : RED; x.beginPath(); x.roundRect(-280, 16, 150, 56, 12); x.fill()
+    x.fillStyle = WHITE; x.font = '44px "Lilita One"'; x.textAlign = 'left'; x.fillText(first ? '1ST' : '2ND', -264, 60); x.font = '24px "Lilita One"'; x.globalAlpha = a * .8; x.fillText('/4', -184, 60); x.globalAlpha = a
+    x.font = '36px "Lilita One"'; x.fillText('RACE · DANFO', -110, 58)
+    const me = clamp(.2 + (t - T.race) * .08 + (t > T.nitro ? (t - T.nitro) * .5 : 0), 0, .95), them = clamp(.32 + (t - T.race) * .08, 0, .95)
+    x.fillStyle = 'rgba(255,255,255,.18)'; x.beginPath(); x.roundRect(-270, 86, 500, 14, 7); x.fill()
+    for (const [p2, col, rr] of [[them, RED, 11], [me, YELLOW, 13]]) { x.fillStyle = col; x.strokeStyle = WHITE; x.lineWidth = 3; x.beginPath(); x.arc(-270 + 500 * p2, 93, rr, 0, 7); x.fill(); x.stroke() }
+    x.font = '30px serif'; x.fillText('🏁', 244, 104)
+    x.restore()
+  }
+  x.restore()
+}
+
+// ---------- intro and end card ----------
+function intro(t) {
+  const dark = t < T.flash ? lerp(1, .5, ease.inOut(prog(t, .95, .9))) : 0
+  if (dark <= 0) return
+  x.fillStyle = `rgba(4,2,10,${dark})`; x.fillRect(0, 0, W, H)
+  if (t > .9 && t < T.flash) {   // headlights sweep on
+    x.save(); x.globalCompositeOperation = 'lighter'
+    const on = prog(t, .95, .3), g = x.createRadialGradient(0, 0, 0, 0, 0, 1); g.addColorStop(0, `rgba(255,240,200,${.55 * on})`); g.addColorStop(1, 'rgba(255,240,200,0)')
+    x.translate(VX, 760); x.scale(760, 230); x.fillStyle = g; x.beginPath(); x.arc(0, 0, 1, 0, 7); x.fill()
+    x.restore()
+  }
+  if (t < T.flash) {
+    const line = 'LAGOS, NIGERIA  ·  6:47 PM', n = Math.floor(clamp((t - .15) / .6) * line.length)
+    x.save(); x.textAlign = 'center'; x.fillStyle = WHITE; x.font = '800 54px "Barlow Condensed"'; x.letterSpacing = '14px'; x.fillText(line.slice(0, n) + (n < line.length && Math.floor(t * 8) % 2 ? '▌' : ''), VX, 470)
+    x.letterSpacing = '0px'; const p = prog(t, .95, .25); x.globalAlpha = p; x.translate(VX, 600); x.scale(lerp(1.3, 1, ease.out(p)), lerp(1.3, 1, ease.out(p))); x.transform(1, 0, -.16, 1, 0, 0); chunky('ROAD NO DEY WAIT.', 96, YELLOW); x.restore()
+  }
+}
+function endCard(t) {
+  if (t < T.title) return
+  const a = ease.out(prog(t, T.title, .25))
+  x.fillStyle = `rgba(8,5,16,${.6 * a})`; x.fillRect(0, 0, W, H)
+  const glow = x.createRadialGradient(VX, 520, 0, VX, 520, 900); glow.addColorStop(0, `rgba(255,150,40,${.28 * a})`); glow.addColorStop(1, 'rgba(255,150,40,0)'); x.fillStyle = glow; x.fillRect(0, 0, W, H)
+  // kicker
+  if (t > T.kicker) {
+    const p = ease.out(prog(t, T.kicker, .3)); x.save(); x.globalAlpha = p; x.translate(0, (1 - p) * 20)
+    x.font = '700 40px "Barlow Condensed"'; x.letterSpacing = '8px'; const label = '3D STREET RACER  ·  LAGOS & ABUJA', w = x.measureText(label).width, sx = VX - (w + 90) / 2
+    x.fillStyle = GREEN; x.fillRect(sx, 262, 22, 46); x.fillStyle = '#fff'; x.fillRect(sx + 22, 262, 22, 46); x.fillStyle = GREEN; x.fillRect(sx + 44, 262, 22, 46)
+    x.fillStyle = WHITE; x.textAlign = 'left'; x.fillText(label, sx + 90, 300); x.letterSpacing = '0px'; x.restore()
+  }
+  // title slam
+  const p = prog(t, T.title, .17), sc = lerp(2.8, 1, ease.out(p))
+  x.save(); x.globalAlpha = clamp(p * 4); x.translate(VX + 30, 590); x.scale(sc, sc); x.transform(1, 0, -.16, 1, 0, 0); x.textAlign = 'center'; chunky('MAINLAND', 270, YELLOW); x.restore()
+  // red band
+  if (t > T.band) {
+    const q = ease.out(prog(t, T.band, .3)), bw = 900, bx = lerp(-bw - 200, VX - bw / 2, q)
+    x.save(); x.translate(bx + bw / 2, 700); x.transform(1, 0, -.25, 1, 0, 0)
+    x.fillStyle = '#a3190e'; x.fillRect(-bw / 2, 10, bw, 100); const g = x.createLinearGradient(0, 0, 0, 100); g.addColorStop(0, '#ff4a38'); g.addColorStop(1, RED); x.fillStyle = g; x.fillRect(-bw / 2, 0, bw, 100)
+    x.restore(); x.save(); x.translate(bx + bw / 2, 772); x.fillStyle = WHITE; x.textAlign = 'center'; x.font = '800 72px "Barlow Condensed"'; x.letterSpacing = '10px'; x.fillText('NAIJA STREET RACING', 6, 0); x.restore()
+  }
+  // call to action
+  if (t > T.cta) {
+    const q = ease.back(prog(t, T.cta, .3)), pulse = 1 + .03 * Math.sin((t - T.cta) * Math.PI * 2 / BEAT) * prog(t, T.cta + .3, .2)
+    x.save(); x.translate(VX - 210, 935); x.scale(q * pulse, q * pulse)
+    x.fillStyle = '#0f6b2e'; x.beginPath(); x.roundRect(-230, -60, 460, 120, 30); x.fill()
+    const g = x.createLinearGradient(0, -70, 0, 50); g.addColorStop(0, '#34c862'); g.addColorStop(1, GREEN); x.fillStyle = g; x.beginPath(); x.roundRect(-230, -72, 460, 120, 30); x.fill()
+    x.strokeStyle = 'rgba(255,255,255,.65)'; x.lineWidth = 5; x.stroke()
+    x.textAlign = 'center'; x.font = '68px "Lilita One"'; x.fillStyle = '#0f6b2e'; x.fillText('PLAY FREE ▸', 0, 10); x.fillStyle = WHITE; x.fillText('PLAY FREE ▸', 0, 4)
+    x.restore()
+    const q2 = ease.out(prog(t, T.cta + b(.5), .3)); x.save(); x.globalAlpha = q2; x.translate(VX + 270 + (1 - q2) * 40, 925)
+    x.fillStyle = 'rgba(255,253,245,.12)'; x.strokeStyle = 'rgba(255,253,245,.35)'; x.lineWidth = 3; x.beginPath(); x.roundRect(-190, -48, 380, 84, 18); x.fill(); x.stroke()
+    x.fillStyle = WHITE; x.textAlign = 'center'; x.font = '700 38px "Barlow Condensed"'; x.letterSpacing = '5px'; x.fillText('IN YOUR BROWSER', 2, 8); x.restore()
+  }
+}
+
+// ---------- one frame ----------
+window.draw = function (t) {
+  x.setTransform(1, 0, 0, 1, 0, 0); x.globalAlpha = 1; x.globalCompositeOperation = 'source-over'; x.filter = 'none'
+  x.fillStyle = '#000'; x.fillRect(0, 0, W, H)
+  const [sx, sy] = shake(t), nitro = t > T.nitro && t < T.title + .3 ? Math.sin(prog(t, T.nitro, T.title + .3 - T.nitro) * Math.PI) : 0
+  const zoom = 1 + .08 * nitro
+  x.setTransform(zoom, 0, 0, zoom, VX - VX * zoom + sx, HZ - HZ * zoom + sy)
+  drawWorld(t)
+  const sp = speed(t); streaks(t, t < T.title ? clamp((sp - 80) / 110) * .8 + nitro * 1.2 : clamp((sp - 80) / 110) * .5, nitro > .1 ? '170,215,255' : '255,253,245')
+  const dn = danfo(t)
+  if (dn) {
+    sparks(t, dn.sx - 120 * dn.s, dn.sy - 30 * dn.s, T.hit1, dn.s * 1.1)
+    sparks(t, dn.sx + 110 * dn.s, dn.sy - 30 * dn.s, T.hit2, dn.s * 1.1)
+  }
+  policeLights(t, Math.min(prog(t, T.police - .1, .2), 1 - prog(t, T.title, .3)))
+  if (nitro > 0) { x.fillStyle = `rgba(40,110,255,${.18 * nitro})`; x.fillRect(-50, -50, W + 100, H + 100) }
+  // left-side shade behind captions
+  const capShade = t > T.flash && t < T.title ? 1 : 0
+  if (capShade) { const g = x.createLinearGradient(0, 0, 900, 0); g.addColorStop(0, 'rgba(10,6,20,.6)'); g.addColorStop(1, 'rgba(10,6,20,0)'); x.fillStyle = g; x.fillRect(-50, 0, 950, H) }
+  if (dn) {
+    bubble(t, dn.tipX, dn.tipY, 'DANFO DRIVER', 'NA ME GET ROAD!', T.horn, b(10))
+    bubble(t, dn.tipX, dn.tipY, 'DANFO DRIVER', 'WEREY! YOU NO GET EYE?', T.hit1 + .1, T.hit2 - .05)
+    bubble(t, dn.tipX, dn.tipY, 'DANFO DRIVER', 'OYA! LET WE RACE!', T.hit2 + .1, T.police - .1)
+  }
+  caption(t, 'DODGE', b(4.5), b(9.7), 110, 440); caption(t, 'DANFOS.', b(5), b(9.7), 110, 620)
+  caption(t, 'BUMP', T.hit1, b(13.8), 110, 440, 170, WHITE); caption(t, 'TWICE.', T.hit2, b(13.8), 110, 620)
+  caption(t, 'RACE FOR', T.race, b(15.8), 110, 440, 150, WHITE); caption(t, 'THE ROAD.', b(14.5), b(15.8), 110, 610, 150)
+  caption(t, 'OUTRUN', T.police, b(19.8), 110, 440, 170, WHITE); caption(t, 'OLOKPA.', b(17), b(19.8), 110, 620)
+  caption(t, 'NITRO!!', T.nitro, b(21.7), VX, 640, 260, '#9fd0ff', 'center')
+  hud(t)
+  x.setTransform(1, 0, 0, 1, sx * .5, sy * .5)
+  endCard(t)
+  x.setTransform(1, 0, 0, 1, 0, 0)
+  intro(t)
+  const v = x.createRadialGradient(VX, H / 2, H * .45, VX, H / 2, H * 1.05); v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,.55)'); x.fillStyle = v; x.fillRect(0, 0, W, H)
+  const f = flash(t); if (f > 0) { x.fillStyle = `rgba(255,250,235,${f})`; x.fillRect(0, 0, W, H) }
+}
+
+window.ready = false
+Promise.all([document.fonts.load('100px "Lilita One"'), document.fonts.load('800 40px "Barlow Condensed"'), document.fonts.load('700 40px "Barlow Condensed"')])
+  .then(() => document.fonts.ready).then(() => { buildLayers(); draw(+(new URLSearchParams(location.search).get('t') || 0)); window.ready = true })
+</script>
+</body></html>

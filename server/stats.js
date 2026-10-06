@@ -15,7 +15,8 @@ const cleanToken = t => String(t ?? '').trim().replace(/^(['"])(.*)\1$/, '$2').t
 // The token from X-Admin-Token, else Authorization: Bearer (some proxies strip Authorization before it reaches Node).
 export const givenToken = req => { const h = req.headers, auth = String(h.authorization || ''); return cleanToken(h['x-admin-token'] || (auth.startsWith('Bearer ') ? auth.slice(7) : '')) }
 
-export function createStats({ file = null, tokenFile = null, token = globalThis.process?.env?.ADMIN_TOKEN } = {}) {
+// Storage: `initial` + `persist(data)` (a database, see store.js), else a JSON `file`, else memory only.
+export function createStats({ file = null, tokenFile = null, token = globalThis.process?.env?.ADMIN_TOKEN, initial = null, persist = null } = {}) {
   // Admin token: ADMIN_TOKEN from the environment, else one generated once and kept in tokenFile.
   let adminToken = cleanToken(token), generated = false
   if (!adminToken && tokenFile && existsSync(tokenFile)) adminToken = cleanToken(readFileSync(tokenFile, 'utf8'))
@@ -25,7 +26,8 @@ export function createStats({ file = null, tokenFile = null, token = globalThis.
   }
   const blank = () => ({ since: Date.now(), totals: { sessions: 0, runs: 0, playSeconds: 0, events: {} }, peak: { count: 0, at: 0 }, days: {}, devices: {}, timeline: [] })
   let data = blank()
-  if (file) try { data = { ...blank(), ...JSON.parse(readFileSync(file, 'utf8')) } } catch { /* first run */ }
+  if (initial) data = { ...blank(), ...initial }
+  else if (file) try { data = { ...blank(), ...JSON.parse(readFileSync(file, 'utf8')) } } catch { /* first run */ }
   const today = () => (data.days[dayKey()] ||= { sessions: 0, runs: 0, playSeconds: 0, peak: 0, players: {}, events: {}, cities: {}, cars: {} })
   // Live sessions by device: open connections, when the session started and what they are driving.
   const live = new Map()
@@ -39,7 +41,7 @@ export function createStats({ file = null, tokenFile = null, token = globalThis.
     const d = data.devices[device]; if (d) d.playSeconds += seconds
     live.delete(device)
   }
-  function save() { if (file) try { mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, JSON.stringify(data)) } catch { /* keep going in memory */ } }
+  function save() { if (persist) return persist(data); if (file) try { mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, JSON.stringify(data)) } catch { /* keep going in memory */ } }
 
   const minute = setInterval(() => {
     const now = Date.now()
@@ -102,6 +104,6 @@ export function createStats({ file = null, tokenFile = null, token = globalThis.
         recent: Object.values(data.devices).sort((a, b) => (b.last || 0) - (a.last || 0)).slice(0, 12).map(d => ({ name: d.name || 'Guest', sessions: d.sessions, minutes: Math.round(d.playSeconds / 60), last: d.last })),
       }
     },
-    close() { clearInterval(minute); for (const [device, s] of live) endSession(device, s); save() },
+    close() { clearInterval(minute); for (const [device, s] of live) endSession(device, s); return Promise.resolve(save()) },
   }
 }
