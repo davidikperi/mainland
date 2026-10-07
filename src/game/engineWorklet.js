@@ -30,7 +30,8 @@ class EngineSynth extends AudioWorkletProcessor {
     this.rasp = o.rasp ?? .4; this.lope = o.lope ?? .05; this.muffle = o.muffle ?? .5
     // Round-trip delay = 2L / c. The second bank is slightly longer, so a V engine's two exhausts beat.
     const d = len => Math.min(8000, Math.round(2 * len / 343 * sampleRate))
-    const header = o.header || .9, tail = o.tail || 2.6
+    // Pipes run 15% long for a deeper resonance.
+    const header = (o.header || .9) * 1.15, tail = (o.tail || 2.6) * 1.15
     this.delays = [[d(header), d(tail)], [d(header * 1.07), d(tail * 1.05)]]
   }
   makePipe() { return { h: new Float32Array(8192), t: new Float32Array(8192), hi: 0, ti: 0, hl: 0, tl: 0 } }
@@ -40,7 +41,8 @@ class EngineSynth extends AudioWorkletProcessor {
     if (!out) return true
     const sr = sampleRate, rpmT = params.rpm[0], thrT = params.throttle[0], banks = this.dual ? 2 : 1
     for (let i = 0; i < out.length; i++) {
-      this.rpm += (rpmT - this.rpm) * .002; this.thr += (thrT - this.thr) * .002
+      // Follow revs quickly (a few ms), so blips, upshifts and the limiter sound crisp.
+      this.rpm += (rpmT - this.rpm) * .004; this.thr += (thrT - this.thr) * .003
       const prev = this.crank
       this.crank = (this.crank + this.rpm / 60 * 360 / sr) % 720
       const wrapped = this.crank < prev
@@ -73,7 +75,7 @@ class EngineSynth extends AudioWorkletProcessor {
         mix += y2
       }
       // Silencer: two-pole low-pass that opens with revs and throttle, then a DC blocker.
-      const rn = Math.min(1, this.rpm / 6500), fc = 160 + (900 + 2800 * this.thr) * rn * (1.25 - this.muffle * .55)
+      const rn = Math.min(1, this.rpm / 6500), fc = 130 + (700 + 2300 * this.thr) * rn * (1.25 - this.muffle * .55)
       const a = 1 - Math.exp(-2 * Math.PI * fc / sr)
       this.lp1 += (mix - this.lp1) * a; this.lp2 += (this.lp1 - this.lp2) * a
       const hp = this.lp2 - this.hpPrev + .995 * this.hp; this.hpPrev = this.lp2; this.hp = hp

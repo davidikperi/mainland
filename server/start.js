@@ -27,7 +27,7 @@ for(const signal of['SIGTERM','SIGINT'])globalThis.process.on(signal,async()=>{
   await world.close();await store.end();globalThis.process.exit(0)
 })
 server.listen(Number(env.PORT)||3000,'0.0.0.0',()=>{
-  console.log('Mainland is ready on port '+(env.PORT||3000)+'\nAdmin panel: /admin  token: '+world.stats.token+'\nStats storage: '+store.label)
+  console.log('Naija Rush is ready on port '+(env.PORT||3000)+'\nAdmin panel: /admin  token: '+world.stats.token+'\nStats storage: '+store.label)
   if(!env.ADMIN_TOKEN)console.warn('WARNING: ADMIN_TOKEN is not set. The admin token above is random, and it changes whenever '+dataDir+'/ is wiped (every deploy or restart on Render and similar hosts), which signs you out of /admin. Set ADMIN_TOKEN to keep it fixed.')
   if(!env.DATABASE_URL&&!env.DATA_DIR&&(env.RENDER||env.RAILWAY_ENVIRONMENT||env.DYNO))console.warn('WARNING: DATABASE_URL is not set, so admin stats are kept in the app folder and are lost on every deploy or restart. Set DATABASE_URL to a Postgres database (e.g. Neon), or mount a persistent disk and set DATA_DIR to its path.')
 })

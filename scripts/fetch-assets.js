@@ -1,4 +1,4 @@
-// Downloads the CC0 photo-scanned textures and sky used by the renderer from Poly Haven
+// Downloads the CC0 photo-scanned textures used by the renderer from Poly Haven
 // (https://polyhaven.com, CC0 licence) into public/assets. The game falls back to
 // procedural materials when these files are missing.
 import { mkdir, writeFile, access } from 'node:fs/promises'
@@ -13,7 +13,6 @@ const textures = {
   roof: 'corrugated_iron',
   soil: 'red_laterite_soil_stones',
 }
-const sky = 'kloofendal_48d_partly_cloudy_puresky'
 
 async function download(url, file) {
   try { await access(file); console.log('exists', file); return } catch { /* fetch it */ }
@@ -29,5 +28,3 @@ for (const [name, id] of Object.entries(textures)) {
   await download(files.Diffuse['1k'].jpg.url, resolve(out, `${name}_diff.jpg`))
   await download(files.nor_gl['1k'].jpg.url, resolve(out, `${name}_nor.jpg`))
 }
-const hdri = await (await fetch(`https://api.polyhaven.com/files/${sky}`)).json()
-await download(hdri.hdri['1k'].hdr.url, resolve(out, 'sky.hdr'))

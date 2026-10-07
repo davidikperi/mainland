@@ -1,4 +1,4 @@
-// Mainland admin panel: who is playing right now and how the game is being played.
+// Naija Rush admin panel: who is playing right now and how the game is being played.
 // Reads /api/admin/stats with the admin token (kept for this browser tab only) and refreshes every 5 seconds.
 import './admin.css'
 
@@ -13,7 +13,7 @@ let token = (() => { try { return sessionStorage.getItem(KEY) || '' } catch { re
 function login(error = '') {
   clearInterval(timer)
   app.innerHTML = `<div class="login"><form>
-    <h1>MAINLAND ADMIN</h1>
+    <h1>NAIJA RUSH ADMIN</h1>
     <p>Enter the admin token. It is printed in the server console when the game starts (or set <code>ADMIN_TOKEN</code>).</p>
     <input type="password" name="token" placeholder="Admin token" autocomplete="current-password" autofocus />
     <div class="error">${esc(error)}</div>
@@ -46,7 +46,7 @@ function render(s, ok) {
   const outcome = (label, today, total) => `<div class="outcome"><small>${label}</small><b>${num(today)}</b><em>${num(total)} all time</em></div>`
   app.innerHTML = `<div class="wrap">
     <header>
-      <div class="brand"><h1>MAINLAND</h1><span>Admin · player activity</span></div>
+      <div class="brand"><h1>NAIJA RUSH</h1><span>Admin · player activity</span></div>
       <div class="status"><i class="dot ${ok ? '' : 'off'}"></i>${ok ? `Live · updated ${clock(s.now)}` : 'Connection lost · retrying'}<button class="ghost" id="signout">Sign out</button></div>
     </header>
     <section class="kpis">

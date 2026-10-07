@@ -42,10 +42,10 @@ function quietestLane(traffic, kind, z, seed) {
 // Reckless drivers: most danfos, a fair few taxis and okadas, some private cars. They speed, tailgate,
 // weave and cut in, and now and then one picks a fight with you without being provoked.
 const RECKLESS = { danfo: .55, taxi: .3, okada: .3, car: .15 }
-function makeVehicle(id, kind, seed, z, lane = null) {
+function makeVehicle(id, kind, seed, z, lane = null, recklessMul = 1) {
   const lanes = lanesFor(kind), [lo, hi] = KINDS[kind].cruise
   const x = lane ?? lanes[Math.floor(noise(seed) * lanes.length)], cruise = lo + noise(seed + 7) * (hi - lo)
-  const reckless = noise(seed * 1.37 + 11) < (RECKLESS[kind] || 0)
+  const reckless = noise(seed * 1.37 + 11) < Math.min(.9, (RECKLESS[kind] || 0) * recklessMul)
   return { id, kind, danfo: kind === 'danfo', model: Math.floor(noise(seed + 3) * 8), tint: Math.floor(noise(seed + 5) * 8), x, tx: x, z, speed: cruise, cruise: reckless ? cruise * 1.18 : cruise, reckless, hold: 0, laneTimer: 0, dmg: null, skid: 0 }
 }
 
@@ -58,13 +58,49 @@ export function newWorld() {
   return { road: { ...START_ROAD }, street: 0, z: 30, x: 0, speed: 0, steer: 0, time: 0, heat: 0, wanted: 0, score: 0, message: '', race: null, contacts: {}, police: null, arrested: false, escape: 0, hornUntil: 0, ramUntil: 0, damage: 0, dmg: { front: 0, rear: 0, left: 0, right: 0 }, skid: 0, impactUntil: 0, events: [], traffic }
 }
 
+// Naija Rush: every drive is a 2 km race from a standing start against these four. They race flat out and fight dirty.
+// Each rival has a colour: their car's paint (the danfo stays yellow), name marker, minimap dot and standings row all use it.
+export const RIVALS = [
+  { name: 'OJUELEGBA FLASH', kind: 'car', model: 3, tint: 1, skill: 1.01, color: '#ff3b30' },
+  { name: 'AREA FATHER', kind: 'car', model: 7, tint: 4, skill: .98, color: '#a855f7' },
+  { name: 'DANFO KING', kind: 'danfo', tint: 2, skill: 1.03, color: '#ffc61a' },
+  { name: 'LEKKI BOSS', kind: 'car', model: 6, tint: 3, skill: .95, color: '#22b8ff' },
+]
+// Three laps of 3 km. The road is straight, so each lap ends at a LAP gantry and the last at the FINISH.
+export const LAP_LENGTH = 3000, LAPS = 3
+// A police checkpoint halfway round every lap: vans block the outer lanes; go through the middle under this speed.
+export const CHECKPOINT_SPEED = 60
+// About a third of free-roam traffic and no BRT buses, so the race flows (and there are no go-slows).
+const RUSH_SPAWN = ['car', 'danfo', 'taxi', 'car', 'danfo', 'okada', 'car', 'danfo', 'okada', 'car', 'danfo', 'keke', 'car', 'danfo', 'taxi', 'okada', 'car', 'danfo', 'car', 'danfo', 'car', 'danfo', 'okada', 'taxi', 'car', 'danfo', 'car', 'danfo', 'okada', 'car', 'danfo', 'car', 'danfo']
+// Race traffic drives worse: reckless odds nearly doubled (most danfos, half the taxis and okadas, a quarter of cars).
+const RUSH_RECKLESS = 1.8
+export const START_LINE = 50, COUNTDOWN = 3.6
+export function newRace({ countdown = true } = {}) {
+  const traffic = []
+  RUSH_SPAWN.forEach((kind, i) => { const z = 160 + i * 55; traffic.push(makeVehicle(`npc${i}`, kind, i + 1, z, quietestLane(traffic, kind, z, i), RUSH_RECKLESS)) })
+  // The grid: two rivals on the front row, you in the middle, two behind. Without a countdown (behind the title screen) they wait on the line.
+  const grid = [[-.55, START_LINE - 4], [.55, START_LINE - 4], [-.55, START_LINE - 20], [.55, START_LINE - 20]]
+  const racers = RIVALS.map((r, i) => ({ ...makeVehicle(`npcR${i}`, r.kind, 90 + i, grid[i][1], grid[i][0]), model: r.model ?? 0, tint: r.tint, color: r.kind === 'car' ? r.color : undefined, speed: 0, cruise: 0, reckless: false, skill: r.skill, rival: i }))
+  const checkpoints = Array.from({ length: LAPS }, (_, i) => ({ z: START_LINE + i * LAP_LENGTH + LAP_LENGTH / 2, passed: false, warned: false }))
+  const vans = checkpoints.flatMap((cp, i) => [-.55, .55].map((x, j) => ({ id: `npcCP${i}${j}`, kind: 'police', fixed: true, ax: x, az: cp.z, x, tx: x, z: cp.z, speed: 0, cruise: 0, hold: 1e9, reckless: false, laneTimer: 0, dmg: null, skid: 0, model: 0, tint: 0 })))
+  const g = { ...newWorld(), z: START_LINE - 12, x: 0, traffic: [...racers, ...traffic, ...vans], rush: true, reckless: 0 }
+  g.race = { grid: true, label: 'NAIJA RUSH', start: START_LINE, finish: START_LINE + LAPS * LAP_LENGTH, laps: LAPS, lap: 1, lapTimes: [], checkpoints, go: countdown ? COUNTDOWN : Infinity, rival: racers[0].id, rivals: racers.map(r => r.id), finished: [], times: {}, end: Infinity }
+  return g
+}
+// Reckless driving fills a meter; when it is full, olokpa come for you.
+export const RECKLESS_LIMIT = 45
+const addReckless = (g, n) => { if (g.rush && !g.police && !g.race?.done) g.reckless = (g.reckless || 0) + n }
+
 // Heavier vehicles barely move when hit; light ones get shoved.
 const MASS = { okada: .35, keke: .55, car: 1.3, taxi: 1.2, danfo: 2, brt: 6, police: 2.1 }
 const massOf = v => MASS[kindOf(v)] ?? 1.3
 const emit = (g, e) => (g.events ||= []).push(e)
 function hurt(v, side, amount) { v.dmg ||= { front: 0, rear: 0, left: 0, right: 0 }; v.dmg[side] = Math.min(1, v.dmg[side] + amount) }
+// Your car takes 75% more hits to wreck: each hit counts for 1/1.75 of its old damage.
+export const WRECK_TOUGHNESS = 1.75
+export const hitDamage = amount => Math.min(7, amount * 14 + 1.5) / WRECK_TOUGHNESS
 function hurtPlayer(g, side, amount) {
-  g.damage = Math.min(100, (g.damage || 0) + Math.min(7, amount * 14 + 1.5)); hurt(g, side, amount)
+  g.damage = Math.min(100, (g.damage || 0) + hitDamage(amount)); hurt(g, side, amount)
   // Too many hits: the engine catches fire and the car is finished.
   if (g.damage >= 100 && !g.wrecked) { g.wrecked = true; g.wreckedAt = g.time; g.score -= 150; g.message = 'YOUR MOTOR DON CATCH FIRE! WRECKED · -150 REP'; emit(g, { type: 'wrecked' }) }
 }
@@ -78,7 +114,7 @@ export function resolveContact(g, v, previousZ) {
   // Mostly-sideways overlap is a side-swipe, handled by solidVehiclePair/scrape.
   if (!(old * dz < 0) && side - Math.abs(g.x - v.x) * ROAD_SCALE < gap - Math.abs(dz)) return false
   const dir = old === 0 ? (dz <= 0 ? -1 : 1) : Math.sign(old), impact = Math.abs(g.speed - v.speed), before = v.speed, npc = v.id.startsWith('npc')
-  if (npc && dir > 0 && v.speed >= g.speed && (isRaging(g, v) || isRacer(g, v.id))) return rammed(g, v, gap, impact)
+  if (npc && dir > 0 && v.speed >= g.speed && (isRaging(g, v) || (isRacer(g, v.id) && !g.race.done))) return rammed(g, v, gap, impact)
   if (npc && dir < 0 && boosting(g)) { shove(g, v); return false }
   g.z = v.z + dir * (gap + .015)
   if (impact >= 7) {
@@ -89,7 +125,9 @@ export function resolveContact(g, v, previousZ) {
     const blow = Math.min(.5, impact / 160)
     hurtPlayer(g, dir < 0 ? 'front' : 'rear', blow * Math.sqrt(ratio)); hurt(v, dir < 0 ? 'rear' : 'front', blow / Math.sqrt(ratio))
     g.impactUntil = g.time + .35; g.shake = Math.min(.6, .15 + impact / 120)
-    provoke(g, v, .8)
+    provoke(g, v, .8); addReckless(g, npc && !isRacer(g, v.id) ? 32 : 8)
+    if (v.fixed && g.rush && !g.police && !g.race?.done) { g.heat = 35; g.cpWanted = 2; g.message = 'YOU JAM OLOKPA VAN?! Two stars, dem dey come!' }
+    else if (g.police && npc && !v.fixed && !isRacer(g, v.id) && g.time > (g.crashStarAt || 0)) { g.crashStarAt = g.time + 4; raiseWanted(g, (g.wanted || 1) + 1) }
     emit(g, { type: 'crash', id: v.id, kind: kindOf(v), model: v.model, impact, x: (g.x + v.x) / 2, z: g.z - dir * vehicleLength(g) / 2 })
   } else g.speed = dir < 0 ? Math.min(g.speed, Math.max(0, before)) : Math.max(g.speed, Math.min(0, before))
   if (!state.armed || impact < 7) return false
@@ -201,7 +239,7 @@ function potholes(g) {
 
 // Nitro: blue NOS bottles lie in the lanes. Drive through one to pick it up (hold up to three); each
 // is one use: a few seconds of full thrust that blasts anything boxing you in out of the way.
-export const NOS_TIME = 3.5, NOS_MAX = 3, NOS_BOOST = 90
+export const NOS_TIME = 3.5, NOS_MAX = 3, NOS_BOOST = 60
 // About two blocks in three have a bottle, always mid-block (never inside a junction).
 const NOS_BLOCK = BLOCK
 export function nitroAt(k, key = 0) {
@@ -367,14 +405,16 @@ function rammed(g, v, gap, impact) {
   const kick = Math.min(impact, 45)
   g.speed += kick * .25; v.speed = g.speed - 6 - kick * .35
   g.steer += (noise(g.time * 7 + v.z) > .5 ? 1 : -1) * (.5 + kick / 60)
-  hurtPlayer(g, 'rear', Math.min(.25, .05 + impact / 250)); hurt(v, 'front', .07)
+  // Over a long Naija Rush a rival's ram does half the damage, so you can finish the race.
+  hurtPlayer(g, 'rear', Math.min(.25, .05 + impact / 250) * (g.rush ? .5 : 1)); hurt(v, 'front', .07)
   g.impactUntil = g.time + .35; g.shake = Math.min(.6, .22 + impact / 100)
   v.attackUntil = 0; v.attackAt = g.time + .7   // drop back, line up, go again
   g.message = v.hits > 1 ? `RAMMED AGAIN! ${v.hits} HITS · This one wan finish you!` : 'DEM DON RAM YOU FROM BACK!'
   emit(g, { type: 'crash', rammed: true, id: v.id, kind: kindOf(v), model: v.model, impact, x: (g.x + v.x) / 2, z: g.z - vehicleLength(g) / 2 })
   // Olokpa only comes for you over a fight you're part of: a driver who attacked you unprovoked doesn't bring
   // the police down on you (hit them back twice, though, and the usual double-bump rule kicks in).
-  if (!g.police && v.hits >= 2 && !v.rage?.unprovoked) { g.heat = 35; g.message = 'OLOKPA DON SEE THE WAHALA! Dem dey come!' }
+  // In a Naija Rush being rammed is not your recklessness, so it never brings olokpa by itself.
+  if (!g.rush && !g.police && v.hits >= 2 && !v.rage?.unprovoked) { g.heat = 35; g.message = 'OLOKPA DON SEE THE WAHALA! Dem dey come!' }
   else if (v.rage?.unprovoked && v.hits >= 2) g.message = `RAMMED ${v.hits} TIMES · Dis one no get sense! Outrun am or hit back`
   return false
 }
@@ -391,7 +431,7 @@ function endRage(g, v, won) {
 
 // Somebody you hit wants payback: danfos always, taxis usually, big men always, others sometimes.
 function provoke(g, v, chance) {
-  if (!v.id.startsWith('npc') || isRacer(g, v.id) || ['okada', 'keke', 'brt'].includes(kindOf(v))) return
+  if (!v.id.startsWith('npc') || v.fixed || isRacer(g, v.id) || ['okada', 'keke', 'brt'].includes(kindOf(v))) return
   const luxury = kindOf(v) === 'car' && [1, 3, 6, 7].includes(v.model)
   if (isRaging(g, v) || noise(g.time * 3 + v.z) > (kindOf(v) === 'danfo' || luxury ? 1 : chance)) return
   v.rage = { until: g.time + 45, honkAt: 0, checkAt: 0 }
@@ -409,7 +449,7 @@ function pickFight(g, v) {
   v.attackAt = g.time; v.ramUntil = 0; v.laneTimer = 0; v.hold = 0
   // Ahead of you: swerve into your lane and stand on the brakes. Behind or beside: come straight at you.
   if (v.z > g.z) v.rage.brakeUntil = g.time + 1.4
-  g.nextFight = g.time + 15 + noise(g.time * 1.3) * 15
+  g.nextFight = g.time + (g.rush ? 10 + noise(g.time * 1.3) * 10 : 15 + noise(g.time * 1.3) * 15)
   g.message = `${kindOf(v) === 'danfo' ? 'DANFO' : kindOf(v) === 'taxi' ? 'TAXI' : 'DRIVER'} DEY COME FOR YOU! You no even touch am!`
   emit(g, { type: 'fight', id: v.id, kind: kindOf(v), model: v.model, z: v.z })
 }
@@ -418,19 +458,26 @@ function driveTraffic(g, dt) {
   const sirens = units.filter(u => u.phase === 'pursuit'), chase = g.police?.phase === 'pursuit'
   for (const v of g.traffic) {
     v.previousZ = v.z; v.previousX = v.x
+    if (v.fixed) { v.speed = 0; continue }   // checkpoint van, parked
     const lastSpeed = v.speed, kind = kindOf(v), danfo = kind === 'danfo'
     // A vehicle stopped by a crash skids to a halt with its hazards on.
     if (g.time <= v.hold) { v.speed = approach(v.speed, 0, 40 * dt); v.z += v.speed / 3.6 * dt; v.skid = Math.abs(v.speed) > 25 ? 1 : 0; continue }
     const racing = isRacer(g, v.id) && !g.race.finished?.includes(v.id), raging = !racing && isRaging(g, v)
+    // Waiting on the grid for the lights.
+    if (racing && g.time < g.race.go) { v.speed = 0; continue }
+    // Who fights you: the driver you hit, and in a Naija Rush every rival (otherwise only the one who challenged you).
+    const fighter = raging || (racing && !g.race.done && (g.race.grid || v.id === g.race.rival))
     if (v.rage && !raging && !racing) endRage(g, v, true)   // they ran out of steam: you win
-    const ahead = leader(bodies, v, v.x), lead = g.z - v.z, jammed = !racing && !raging && jamAt(v.z, laneKey(g))
+    const ahead = leader(bodies, v, v.x), lead = g.z - v.z, jammed = !racing && !raging && !g.rush && jamAt(v.z, laneKey(g))
     const reckless = v.reckless && !racing && !raging
     // Only the driver you hit comes after you; reckless drivers just drive badly (set true to bring back unprovoked fights).
-    if (UNPROVOKED_FIGHTS && reckless && FIGHTERS.includes(kind) && !jammed && !g.race && !g.turning && g.time > (g.nextFight ?? 8) && Math.abs(lead) < 45 && Math.abs(g.speed) > 15
+    const fightsOn = UNPROVOKED_FIGHTS ? !g.race : g.rush && g.race.launched && !g.race.done
+    if (fightsOn && reckless && FIGHTERS.includes(kind) && !jammed && !g.turning && g.time > (g.nextFight ?? 8) && Math.abs(lead) < 45 && Math.abs(g.speed) > 15
       && g.traffic.filter(o => isRaging(g, o)).length < 2 && noise(g.time * .7 + v.z) < dt * 1.5) { pickFight(g, v); continue }
     let target = v.cruise * (1 - (g.rain || 0) * .12)   // everyone eases off in the rain
     // Racers rubber-band hard: they never let you cruise off, and punish mistakes.
-    if (racing) target = v.cruise * (v.skill || 1) + clamp(lead * .7, -35, 75)
+    // In a Naija Rush everyone runs their own pace with only a gentle pull towards you: fall behind and they are gone.
+    if (racing) target = v.cruise * (v.skill || 1) + (g.rush ? clamp(lead * .4, -6, 30) : clamp(lead * .7, -35, 75))
     // Road rage: chase you down, sit on your bumper, brake-check you once in front.
     else if (raging) {
       target = clamp(g.speed + clamp(lead * .8, -25, 70), 0, KINDS[kind].cruise[1] * 2.3)
@@ -442,6 +489,10 @@ function driveTraffic(g, dt) {
       // They pin you: stopped with the angry driver right on you means you lose.
       else if (Math.abs(lead) < 9 && Math.abs(g.speed) < 8) { v.rage.pin = (v.rage.pin || 0) + dt; if (v.rage.pin > 2.5) { endRage(g, v, false); continue } } else v.rage.pin = 0
     }
+    // Chaos brake-check: stands on the brakes for no reason.
+    if (g.time < (v.brakeUntil || 0)) target = Math.min(target, 4)
+    // Checkpoint ahead: everyone but the racers slows right down and filters through the middle lane.
+    if (!racing && g.race?.checkpoints) for (const cp of g.race.checkpoints) { const d = cp.z - v.z; if (d > -6 && d < 70) target = Math.min(target, 32) }
     // Go-slow: creep in stop-and-go waves.
     else if (jammed) target = Math.min(target, (5 + noise(v.z * .01 + kind.length) * 18) * (Math.sin(g.time * .45 + v.z * .06) > -.2 ? 1 : .15))
     // Danfo pickup: pull up at the kerb, load passengers, then barge back out.
@@ -454,13 +505,12 @@ function driveTraffic(g, dt) {
       const side = Math.abs(g.x - v.x)
       // Reckless drivers weave for no reason, and cut in sharp right in front of you.
       if (reckless && !jammed && noise(g.time * 2.1 + v.z) < .2) move = true
-      if (UNPROVOKED_FIGHTS && reckless && lead < -4 && lead > -25 && side > .3 && side < .85 && g.time > (v.cutAt || 0) && laneClear(bodies.filter(o => o !== g), v, nearestLane(g.x))) {
+      if ((UNPROVOKED_FIGHTS || g.rush) && reckless && lead < -4 && lead > -25 && side > .3 && side < .85 && g.time > (v.cutAt || 0) && laneClear(bodies.filter(o => o !== g), v, nearestLane(g.x))) {
         v.tx = nearestLane(g.x); v.cutAt = g.time + 9; move = false
         emit(g, { type: 'cutIn', id: v.id, kind, model: v.model, z: v.z, x: v.x })
       }
       // Only the car you hit (the angry driver, or the rival who challenged you) blocks and rams you; other racers just race.
-      const fights = raging || (racing && v.id === g.race.rival)
-      if (fights) {
+      if (fighter) {
         const droppingBack = raging && v.rage.unprovoked && g.time > (v.rage.brakeUntil || 0) && !chase
         if (!droppingBack && lead > -32 && lead < -3 && side < .75 && side > .1 && laneClear(bodies.filter(o => o !== g), v, nearestLane(g.x))) {
           // You're right behind: slam the door in your lane.
@@ -498,8 +548,11 @@ function driveTraffic(g, dt) {
     // Rivals fight dirty: line up behind you and ram your bumper again and again, and once
     // olokpa is on you, get in front and stand on the brakes to hold you for the arrest.
     let attacking = false
-    if (raging || (racing && v.id === g.race.rival)) {
-      if (lead > 1 && lead < 60 && Math.abs(g.speed) > 5 && g.time > (v.attackAt || 0)) { v.attackUntil = g.time + 3; v.attackAt = g.time + (raging ? 1.8 : 3.2) + noise(v.z + g.time) * 1.5 }
+    if (fighter) {
+      // Naija Rush rivals mostly race: one at a time, every so often, a rival right behind you goes for your bumper.
+      const rushRival = g.rush && racing
+      if (rushRival) { if (lead > 1 && lead < 25 && Math.abs(g.speed) > 40 && g.time > (v.attackAt || 0) && g.time > (g.nextAttack || 0)) { v.attackUntil = g.time + 2.5; v.attackAt = g.time + 12 + noise(v.z + g.time) * 8; g.nextAttack = g.time + 7 + noise(g.time) * 6 } }
+      else if (lead > 1 && lead < 60 && Math.abs(g.speed) > 5 && g.time > (v.attackAt || 0)) { v.attackUntil = g.time + 3; v.attackAt = g.time + (raging ? 1.8 : 3.2) + noise(v.z + g.time) * 1.5 }
       if (lead > 0 && g.time < (v.attackUntil || 0)) { attacking = true; v.tx = clamp(g.x, -1, 1); target = Math.max(target, g.speed + 40) }
       // An unprovoked attacker who ends up in front, once the brake-check is done, gets out of your lane and lets
       // you by, then comes at you from behind.
@@ -507,33 +560,61 @@ function driveTraffic(g, dt) {
         target = Math.max(0, Math.min(target, Math.abs(g.speed) - 18))
         if (Math.abs(v.x - g.x) < .35) { const out = lanesFor(kind).filter(x => Math.abs(x - g.x) > .35).sort((p, q) => Math.abs(p - v.x) - Math.abs(q - v.x)).find(x => laneClear(bodies.filter(o => o !== g), v, x)); if (out !== undefined) v.tx = out }
       }
-      else if (chase && lead < -1 && lead > -60) {
+      // Holding you for olokpa: angry drivers always; rivals too, except in a Naija Rush, where they just race.
+      else if (chase && lead < -1 && lead > -60 && !rushRival) {
         const lined = Math.abs(g.x - v.x) < .3
         if (lined && g.time > (v.blockSaidAt || 0)) { v.blockSaidAt = g.time + 9; emit(g, { type: 'blocking', id: v.id, kind, model: v.model, z: v.z }) }
-        // Angry drivers brake-check you to a stop; racers just sit in your line and hold you up.
+        // Angry drivers brake-check you to a stop (in a Naija Rush they just squeeze you, so olokpa can close in);
+        // racers sit in your line and hold you up.
         v.tx = clamp(g.x, -.86, .86)
-        target = !lined ? Math.max(0, g.speed + 4) : raging || Math.abs(g.speed) < 40 ? Math.max(0, Math.min(g.speed - 30, 25)) : g.speed - 8
+        target = !lined ? Math.max(0, g.speed + 4) : raging && g.rush ? Math.max(0, g.speed - 15) : raging || Math.abs(g.speed) < 40 ? Math.max(0, Math.min(g.speed - 30, 25)) : g.speed - 8
       }
     }
     v.x = approach(v.x, v.tx ?? v.x, dt * (attacking ? 1.1 : racing || raging || reckless ? .75 : danfo ? .5 : .38))
-    v.speed = approach(v.speed, target, (target < v.speed ? 70 : attacking ? 80 : racing || raging ? 34 : reckless ? 26 : danfo ? 20 : 14) * dt)
+    const pull = racing && g.rush ? accelAt((g.accel || 30) * 1.05, v.speed, Math.max(60, v.cruise * (v.skill || 1))) : racing || raging ? 34 : reckless ? 26 : danfo ? 20 : 14
+    v.speed = approach(v.speed, target, (target < v.speed ? 70 : attacking ? 80 : pull) * dt)
     v.z += v.speed / 3.6 * dt
     v.skid = (lastSpeed - v.speed) / dt > 65 && v.speed > 30 ? 1 : 0
   }
 }
 
+// Naija Rush chaos: every 5-11 seconds something kicks off 50-260 m ahead of you. A reckless driver dives into the next
+// lane without looking, someone slams the brakes for no reason, or a tyre bursts and the vehicle skids to a stop with
+// its hazards on. Whatever is behind has to react, and often doesn't: that's how the pile-ups start.
+function roadChaos(g) {
+  g.nextChaos ??= g.time + 6
+  if (g.time < g.nextChaos) return
+  g.nextChaos = g.time + 5 + noise(g.time * 3.1) * 6
+  const pick = g.traffic.filter(v => !v.fixed && v.rival === undefined && !isRaging(g, v) && g.time > v.hold && v.z - g.z > 50 && v.z - g.z < 260 && v.speed > 25)
+  if (!pick.length) return
+  const v = pick[Math.floor(noise(g.time * 7.7) * pick.length)], roll = noise(g.time * 5.3), kind = kindOf(v)
+  if (roll < .45) {
+    const lanes = lanesFor(kind).filter(x => Math.abs(x - v.x) > .2 && Math.abs(x - v.x) < .7)
+    if (!lanes.length) return
+    v.tx = lanes[Math.floor(noise(g.time * 9.1) * lanes.length)]; v.laneTimer = g.time + 2.5
+    emit(g, { type: 'chaos', what: 'swerve', id: v.id, kind, z: v.z })
+  } else if (roll < .8) {
+    v.brakeUntil = g.time + 1.4
+    emit(g, { type: 'chaos', what: 'brake', id: v.id, kind, z: v.z })
+  } else {
+    v.hold = g.time + 7; v.skid = 1
+    g.message = `WAHALA AHEAD! ${kind === 'danfo' ? 'Danfo' : kind === 'okada' ? 'Okada' : 'Motor'} tyre don burst!`
+    emit(g, { type: 'chaos', what: 'blowout', id: v.id, kind, z: v.z })
+  }
+}
+
 function recycleTraffic(g) {
   const bodies = [...g.traffic, g, ...policeUnits(g)]
-  const jam = nextJam(g.z + 150, 900, laneKey(g))
+  const jam = !g.rush && nextJam(g.z + 150, 900, laneKey(g)), pool = g.rush ? RUSH_SPAWN : SPAWN
   for (const v of g.traffic) {
-    if (isRacer(g, v.id) || isRaging(g, v)) continue
+    if (v.fixed || isRacer(g, v.id) || isRaging(g, v)) continue
     const behind = v.z < g.z - 110, farAhead = v.z > g.z + 900
     if (!behind && !farAhead) continue
-    const seed = g.time * 13 + v.z, kind = SPAWN[Math.floor(noise(seed) * SPAWN.length)]
+    const seed = g.time * 13 + v.z, kind = pool[Math.floor(noise(seed) * pool.length)]
     // Pack the next go-slow; otherwise slow players get traffic from behind, fast ones ahead.
     const intoJam = jam && noise(seed + 9) > .25
     const z = intoJam ? jam.start + noise(seed + 1) * (jam.end - jam.start) : farAhead && g.speed < 60 ? g.z - 95 : g.z + 430 + noise(seed + 1) * 260
-    const next = makeVehicle(v.id, kind, seed, z, quietestLane(g.traffic.filter(o => o !== v), kind, z, seed))
+    const next = makeVehicle(v.id, kind, seed, z, quietestLane(g.traffic.filter(o => o !== v), kind, z, seed), g.rush ? RUSH_RECKLESS : 1)
     if (z < g.z) next.cruise = Math.max(next.cruise, g.speed + 25)
     if (intoJam) next.speed = 10
     if (!laneClear(bodies, next, next.x) || policeUnits(g).some(u => Math.abs(z - u.z) < 25)) continue
@@ -602,7 +683,8 @@ export const ARREST_TIME = 1.6
 export function updateArrest(g, dt) {
   const p = g.police; if (!p) return
   const units = policeUnits(g), dist = u => Math.hypot((u.x - g.x) * ROAD_SCALE, u.z - g.z)
-  const nearest = Math.min(...units.map(dist)), slow = Math.abs(g.speed) < 40 && !boosting(g)
+  // In a Naija Rush you can only be arrested nearly stopped, so slowing for a checkpoint mid-chase isn't an automatic bust.
+  const nearest = Math.min(...units.map(dist)), slow = Math.abs(g.speed) < (g.rush ? 25 : 40) && !boosting(g)
   if (nearest < 7.5 && slow) {
     if (!g.arrestMeter) g.message = 'OLOKPA DON REACH YOU! Drive off before dem arrest you!'
     g.arrestMeter = (g.arrestMeter || 0) + dt * (Math.abs(g.speed) < 10 ? 1.4 : 1)
@@ -625,11 +707,18 @@ export function updateArrest(g, dt) {
 // Six-speed automatic: engine revs follow road speed through the gear ratio, with
 // clutch slip pulling away, a short torque cut on each upshift and a rev limiter.
 const RATIOS = [0, 112, 70, 48, 35, 26, 19]
-export function updateGearbox(g, gas, dt, engine = {}) {
+export function updateGearbox(g, gas, dt, engine = {}, neutral = false) {
   const idle = engine.idle || 800, redline = engine.redline || 6200, sp = Math.abs(g.speed)
   g.gear ||= 1; g.rpm ||= idle
-  g.throttle = approach(g.throttle || 0, gas ? 1 : 0, dt * 6)
+  g.throttle = approach(g.throttle || 0, gas ? 1 : 0, dt * (neutral ? 10 : 6))
   g.shifted = 0
+  // Out of gear (on the grid): the engine spins up fast with no load and bounces off the limiter.
+  if (neutral) {
+    const target = gas ? redline + 400 : idle
+    g.rpm = approach(g.rpm, target, dt * (gas ? 12000 : 6000))
+    if (g.rpm >= redline) g.rpm = redline - (Math.floor(g.time * 22) % 2) * 450
+    return
+  }
   if (g.speed < -1) g.gear = -1
   else if (g.gear === -1) g.gear = 1
   let target
@@ -645,7 +734,10 @@ export function updateGearbox(g, gas, dt, engine = {}) {
   g.rpm = approach(g.rpm, Math.max(idle, target), dt * (target > g.rpm ? 9000 : 7000))
 }
 
-export const RACE_DISTANCE = 1500
+// Acceleration fades as you near top speed: strong off the line, little pull in the top gears. A 190E takes about
+// 9 s to 100 km/h and 20 s to get near its top speed; a Challenger about 5 s and 17 s.
+export const accelAt = (accel, speed, top) => accel * .55 * Math.max(.1, 1 - Math.pow(Math.max(0, speed) / Math.max(1, top), 1.6))
+export const RACE_DISTANCE = 2000
 const PRIZES = [500, 200, 75]
 // Second bump: the car you hit challenges you, and up to two nearby drivers join in.
 export function startRace(g, v, settings, label) {
@@ -670,6 +762,25 @@ export function stepWorld(g, k, dt, settings, peers = [], onBump = () => {}) {
   if (g.wrecked) { k = {}; g.speed *= .94; g.boostUntil = 0 }
   g.events ||= []
   g.time += dt; g.shake = Math.max(0, (g.shake || 0) - dt)
+  // Naija Rush: held on the grid through the 3-2-1, then the rivals launch flat out. Once you've finished you just coast.
+  const race = g.race
+  if (race?.grid && !race.launched) {
+    g.revving = !!(k.w || k.arrowup); k = {}; g.speed = 0
+    const n = Math.ceil(race.go - g.time)
+    if (n >= 1 && n <= 3 && n !== race.count) { race.count = n; emit(g, { type: 'countdown', n }) }
+    if (g.time >= race.go) {
+      race.launched = true
+      for (const v of g.traffic) if (v.rival !== undefined) v.cruise = settings.maxSpeed * (kindOf(v) === 'danfo' ? .95 : 1)
+      // Launch: hold the revs in the sweet spot at GO for a flying start; bounce off the limiter and you spin the wheels.
+      const revs = (g.rpm || 0) / (settings.engine?.redline || 6200)
+      if (revs > .55 && revs < .9) { g.speed = 30; g.message = 'PERFECT START!'; emit(g, { type: 'perfectStart' }) }
+      else if (revs >= .9) { g.speed = 4; g.skid = 1; g.message = 'WHEELSPIN! Too many revs.' }
+      else g.message = 'GO! GO! GO!'
+      g.revving = false; emit(g, { type: 'raceGo' })
+    }
+  }
+  if (race?.done) k = {}
+  g.accel = settings.acceleration
   // Heavy damage costs top speed.
   const maxSpeed = settings.maxSpeed * (1 - (g.damage || 0) / 400)
   const gas = k.w || k.arrowup, reverse = k.s || k.arrowdown, brake = k[' ']
@@ -682,10 +793,11 @@ export function stepWorld(g, k, dt, settings, peers = [], onBump = () => {}) {
   if (boost && !brake) g.speed = Math.min(maxSpeed + NOS_BOOST, Math.max(g.speed, 0) + Math.max(75, settings.acceleration * 2.5) * dt)
   else if (brake) g.speed = Math.sign(g.speed) * Math.max(0, Math.abs(g.speed) - 85 * wet * dt)
   else if (reverse) g.speed = Math.max(-28, g.speed - (g.speed > 0 ? 72 : 20) * dt)
-  else if (gas) g.speed = g.speed > maxSpeed ? g.speed - 20 * dt : Math.min(maxSpeed, g.speed + settings.acceleration * dt * (g.time < (g.shiftUntil || 0) ? .3 : 1))
+  else if (gas) g.speed = g.speed > maxSpeed ? g.speed - 20 * dt : Math.min(maxSpeed, g.speed + accelAt(settings.acceleration, g.speed, maxSpeed) * dt * (g.time < (g.shiftUntil || 0) ? .3 : 1))
   else g.speed = Math.sign(g.speed) * Math.max(0, Math.abs(g.speed) - 9 * dt)
   g.braking = !!(brake || (reverse && g.speed > 0))
-  updateGearbox(g, !!(gas || boost || (reverse && g.speed <= 0)), dt, settings.engine)
+  const neutral = !!(race?.grid && !race.launched)
+  updateGearbox(g, !!(gas || boost || (reverse && g.speed <= 0) || (neutral && g.revving)), dt, settings.engine, neutral)
   if (k.h && g.hornUntil < g.time) g.hornUntil = g.time + .7
 // [ROAD NETWORK DISABLED] one straight road for now; uncomment to bring back junctions and turning.
   // if (g.turning) {
@@ -713,29 +825,51 @@ export function stepWorld(g, k, dt, settings, peers = [], onBump = () => {}) {
   galaPickups(g)
   // junctions(g)
   driveTraffic(g, dt)
+  if (g.rush && race?.launched && !race.done) roadChaos(g)
   recycleTraffic(g)
-  const jam = nextJam(g.z, 250, laneKey(g))
+  const jam = !g.rush && nextJam(g.z, 250, laneKey(g))
   if (jam && `${laneKey(g)}:${jam.k}` !== g.jamWarned) { g.jamWarned = `${laneKey(g)}:${jam.k}`; emit(g, { type: 'jamAhead', distance: Math.round(jam.start - g.z) }); g.message = 'GO-SLOW AHEAD! Traffic don hold for front.' }
   for (const v of [...g.traffic, ...peers]) if (resolveContact(g, v, old)) {
-    const count = g.contacts[v.id].count; g.message = 'FIRST BUMP · Reverse clear, then hit again'
+    const count = g.contacts[v.id].count; if (!g.rush) g.message = 'FIRST BUMP · Reverse clear, then hit again'
     if (!v.id.startsWith('npc')) onBump(v.id)
     else if (count % 2 === 0 && !g.race) startRace(g, v, settings, v.danfo ? 'DANFO ROAD RAGE' : 'STREET RACE')
   }
   // Near misses: slipping past a vehicle with less than a metre to spare.
   for (const v of g.traffic) {
     const passed = (old - (v.previousZ ?? v.z)) < 0 && g.z - v.z >= 0, gap = Math.abs(g.x - v.x) * ROAD_SCALE - lateralGap(g, v)
-    if (passed && gap > 0 && gap < .9 && g.speed > 60) { g.score += 10; emit(g, { type: 'nearMiss', id: v.id, kind: kindOf(v), x: v.x, z: v.z }) }
+    if (passed && gap > 0 && gap < .9 && g.speed > 60) { g.score += 10; addReckless(g, 5); emit(g, { type: 'nearMiss', id: v.id, kind: kindOf(v), x: v.x, z: v.z }) }
   }
-  if (g.heat > 0 && !g.police) beginPursuit(g)
+  // Flat out (over 140 km/h) raises the meter; clean driving slowly lowers it. Full meter: olokpa.
+  if (g.rush && !g.police && race?.launched && !race.done) {
+    g.reckless = Math.max(0, (g.reckless || 0) + dt * (sp > settings.maxSpeed * .9 ? 1.6 : sp > settings.maxSpeed * .75 ? .6 : -1.2))
+    if (g.reckless >= RECKLESS_LIMIT) { g.reckless = 0; g.heat = 35; g.message = 'OLOKPA DON SEE YOUR RECKLESS DRIVING! Dem dey come!'; emit(g, { type: 'policeAlert' }) }
+  }
+  // Checkpoints: warn on approach; through under the limit you're waved on, faster and they come after you.
+  if (race?.checkpoints && race.launched && !race.done) for (const cp of race.checkpoints) {
+    if (!cp.warned && cp.z - g.z < 260 && cp.z > g.z) { cp.warned = true; g.message = `POLICE CHECKPOINT AHEAD! Slow below ${CHECKPOINT_SPEED} and use the middle lane`; emit(g, { type: 'checkpointAhead' }) }
+    if (!cp.passed && old < cp.z && g.z >= cp.z) {
+      cp.passed = true
+      if (sp > CHECKPOINT_SPEED && !g.police) { g.heat = 35; g.cpWanted = 2; g.message = 'YOU BLAST THE CHECKPOINT! Two stars, olokpa dey come!'; emit(g, { type: 'checkpointRun' }) }
+      else if (sp <= CHECKPOINT_SPEED) { g.score += 75; g.message = 'CHECKPOINT CLEARED · "Oga, you fit go." +75 RP'; emit(g, { type: 'checkpointOk' }) }
+    }
+  }
+  if (g.heat > 0 && !g.police) { beginPursuit(g); if (g.cpWanted) { raiseWanted(g, g.cpWanted); g.cpWanted = 0 } }
+  // In a Naija Rush olokpa give up after 50 seconds unless they're already boxing you in.
+  if (g.rush && g.police && g.time - g.police.started > 50 && !(g.arrestMeter > 0)) {
+    g.police = null; g.backup = []; g.heat = 0; g.wanted = 0; g.escape = 0; g.score += 100
+    g.message = 'OLOKPA DON TIRE! Dem don give up · +100 RP'; emit(g, { type: 'policeGaveUp' })
+  }
   if (g.police) {
-    raiseWanted(g, 1 + (g.time - g.police.started > 20) + (g.time - g.police.started > 45))
+    // Stars climb with the length of the chase: quicker in a Naija Rush.
+    const [two, three] = g.rush ? [12, 25] : [20, 45]
+    raiseWanted(g, Math.max(g.wanted || 1, 1 + (g.time - g.police.started > two) + (g.time - g.police.started > three)))
     for (const u of policeUnits(g)) { driveUnit(g, u, dt); policeRam(g, u) }
   }
   const units = policeUnits(g), bodies = [...g.traffic, ...units]
   for (let pass = 0; pass < 4; pass++) {
     for (let i = 0; i < bodies.length; i++) for (let j = i + 1; j < bodies.length; j++) {
       const p = bodies[i], q = bodies[j], rel = Math.abs(p.speed - q.speed)
-      if (solidVehiclePair(p, q) === 'end' && pass === 0 && rel > 18 && p.id.startsWith('npc') && q.id.startsWith('npc') && !isRacer(g, p.id) && !isRacer(g, q.id)) {
+      if (solidVehiclePair(p, q) === 'end' && pass === 0 && rel > 18 && p.id.startsWith('npc') && q.id.startsWith('npc') && !isRacer(g, p.id) && !isRacer(g, q.id) && !p.fixed && !q.fixed) {
         p.hold = q.hold = g.time + 4; hurt(p, p.z > q.z ? 'rear' : 'front', rel / 150); hurt(q, q.z > p.z ? 'rear' : 'front', rel / 150)
         emit(g, { type: 'npcCrash', id: p.z > q.z ? q.id : p.id, other: p.z > q.z ? p.id : q.id, kind: kindOf(p.z > q.z ? q : p), otherKind: kindOf(p.z > q.z ? p : q), impact: rel, x: (p.x + q.x) / 2, z: (p.z + q.z) / 2 })
       }
@@ -751,9 +885,17 @@ export function stepWorld(g, k, dt, settings, peers = [], onBump = () => {}) {
     }
     for (const v of g.traffic) if (solidVehiclePair(g, v) === 'side') scrape(g, v)
   }
-  for (const v of g.traffic) v.x = clamp(v.x, -1.08, 1.08)
+  for (const v of g.traffic) { v.x = clamp(v.x, -1.08, 1.08); if (v.fixed) { v.x = v.ax; v.z = v.az; v.speed = 0 } }
   for (const u of units) u.x = clamp(u.x, -1.05, 1.05)
   if (g.police) updateArrest(g, dt)
+  if (race?.grid && race.launched && !race.done) {
+    const lap = Math.min(race.laps, Math.floor((g.z - race.start) / LAP_LENGTH) + 1)
+    if (lap > race.lap) {
+      race.lapTimes.push(g.time - race.go - race.lapTimes.reduce((a, b) => a + b, 0)); race.lap = lap
+      g.message = lap === race.laps ? 'FINAL LAP! Na now e matter!' : `LAP ${lap} OF ${race.laps}`
+      emit(g, { type: 'lap', lap, final: lap === race.laps })
+    }
+  }
   if (g.race) finishRace(g, peers)
 }
 
@@ -766,13 +908,15 @@ function scrape(g, v) {
   hurtPlayer(g, right ? 'right' : 'left', .06); hurt(v, right ? 'left' : 'right', .1)
   g.speed *= .95; g.shake = Math.max(g.shake, .12)
   if (v.id.startsWith('npc')) provoke(g, v, .5)
+  addReckless(g, isRacer(g, v.id) ? 4 : 10)
   emit(g, { type: 'scrape', id: v.id, kind: kindOf(v), model: v.model, racer: isRacer(g, v.id), x: (g.x + v.x) / 2, z: (g.z + v.z) / 2 })
 }
 
 function finishRace(g, peers) {
   const r = g.race, all = [...g.traffic, ...peers]
   r.finished ||= []
-  for (const id of r.rivals || [r.rival]) { const v = all.find(o => o.id === id); if (v && v.z >= r.finish && !r.finished.includes(id)) r.finished.push(id) }
+  for (const id of r.rivals || [r.rival]) { const v = all.find(o => o.id === id); if (v && v.z >= r.finish && !r.finished.includes(id)) { r.finished.push(id); if (r.times) r.times[id] = g.time - r.go } }
+  if (r.grid) { finishRush(g, r, all); return }
   const total = (r.rivals || [r.rival]).length
   let place = null
   if (g.z >= r.finish) place = r.finished.length + 1
@@ -785,4 +929,27 @@ function finishRace(g, peers) {
   emit(g, { type: 'raceEnd', won, place, id: winner, kind: wv ? kindOf(wv) : 'car' })
   for (const id of r.rivals || []) { const v = g.traffic.find(o => o.id === id); if (v) { const [lo, hi] = KINDS[kindOf(v)].cruise; v.cruise = (lo + hi) / 2; v.tx = nearestLane(v.x) } }
   g.race = null
+}
+// Naija Rush finish: your place, time and prize. Crossing the line clean also shakes off olokpa.
+const RUSH_PRIZES = [600, 300, 150, 50, 0], ORDINAL = ['1ST', '2ND', '3RD', '4TH', '5TH']
+function finishRush(g, r, all) {
+  // The race is yours to finish: even in last place you cross the line and get a time.
+  if (r.done || g.z < r.finish) return
+  const place = r.finished.length + 1, prize = RUSH_PRIZES[place - 1] || 0
+  r.done = { place, time: g.time - r.go, prize, at: g.time }
+  g.score += prize
+  g.police = null; g.backup = []; g.wanted = 0; g.heat = 0; g.arrestMeter = 0; g.escape = 0
+  g.message = place === 1 ? `1ST PLACE! YOU WIN THE RUSH · +${prize} RP` : `${ORDINAL[place - 1]} PLACE${prize ? ` · +${prize} RP` : ''}`
+  const winner = place === 1 ? r.rival : r.finished[0], wv = all.find(o => o.id === winner)
+  emit(g, { type: 'raceEnd', won: place === 1, place, id: winner, kind: wv ? kindOf(wv) : 'car' })
+}
+
+// The finishing order for the results screen: everyone home in order (you included), then whoever is still racing.
+export function rushResults(g) {
+  const r = g.race; if (!r?.grid || !r.done) return null
+  const byId = id => g.traffic.find(v => v.id === id)
+  const rival = id => { const v = byId(id), info = v ? vehicleInfo(v) : {}; return { id, name: RIVALS[v?.rival ?? 0].name, car: `${info.make} ${info.name}`, time: r.times[id] ?? null, gap: v && r.times[id] === undefined ? Math.max(0, Math.round(r.finish - v.z)) : null } }
+  const home = r.finished.map(rival), still = r.rivals.filter(id => !r.finished.includes(id)).sort((a, b) => (byId(b)?.z ?? 0) - (byId(a)?.z ?? 0)).map(rival)
+  const order = [...home.slice(0, r.done.place - 1), { id: 'player', me: true, time: r.done.time, gap: null }, ...home.slice(r.done.place - 1), ...still]
+  return { ...r.done, order: order.map((e, i) => ({ ...e, pos: i + 1 })) }
 }

@@ -294,8 +294,11 @@ export function createTextureKit(renderer) {
   function checker(text) {
     return canvasTexture(1024, 192, (ctx, w, h) => {
       for (let y = 0; y < h; y += 32) for (let x = 0; x < w; x += 32) { ctx.fillStyle = ((x + y) / 32) % 2 ? '#111' : '#f4f4f4'; ctx.fillRect(x, y, 32, 32) }
+      if (!text) return   // plain chequer: road strip and flags
       ctx.fillStyle = '#ffc61a'; ctx.fillRect(w * .28, 24, w * .44, h - 48); ctx.strokeStyle = '#111'; ctx.lineWidth = 8; ctx.strokeRect(w * .28, 24, w * .44, h - 48)
-      ctx.fillStyle = '#111'; ctx.font = '900 100px Impact, Arial Black'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, w / 2, h / 2 + 6)
+      let size = 100; ctx.font = `900 ${size}px Impact, Arial Black`
+      while (ctx.measureText(text).width > w * .4 && size > 40) { size -= 4; ctx.font = `900 ${size}px Impact, Arial Black` }
+      ctx.fillStyle = '#111'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, w / 2, h / 2 + 6)
     })
   }
   function leaf() {

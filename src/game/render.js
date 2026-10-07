@@ -1,10 +1,9 @@
 import * as T from 'three'
 import { Sky } from 'three/examples/jsm/objects/Sky.js'
-import { HDRLoader } from 'three/examples/jsm/loaders/HDRLoader.js'
 import { createTextureKit, rand } from './textures.js'
 import { createModelKit, Batch, boxGeo } from './models.js'
 import { CITIES } from './city.js'
-import { ROAD_SCALE, vehicleInfo, potholesNear, holeKey, START_ROAD, nitrosNear, nitroKey, galasNear } from './physics.js'
+import { ROAD_SCALE, vehicleInfo, potholesNear, holeKey, START_ROAD, nitrosNear, nitroKey, galasNear, RIVALS, LAPS, LAP_LENGTH, CHECKPOINT_SPEED } from './physics.js'
 import { createCity } from './cityGrid.js'
 import { createEffects } from './effects.js'
 
@@ -13,6 +12,10 @@ const clamp = (n, a, b) => Math.max(a, Math.min(b, n))
 export function createWorldRenderer(canvas, city, quality = 'high') {
   const high = quality === 'high', C = CITIES[city]
   const renderer = new T.WebGLRenderer({ canvas, antialias: high, powerPreference: 'high-performance' })
+  // Shader error checks read the compile log, which makes the page wait for every shader to finish compiling. Development only.
+  renderer.debug.checkShaderErrors = !!import.meta.env?.DEV
+  // Nothing is drawn until prewarm() has compiled every shader in the background, so the menus stay responsive while it works.
+  let ready = false
   renderer.setPixelRatio(Math.min(devicePixelRatio, high ? 1.5 : 1))
   renderer.shadowMap.enabled = high; renderer.shadowMap.type = T.PCFShadowMap
   renderer.outputColorSpace = T.SRGBColorSpace; renderer.toneMapping = T.ACESFilmicToneMapping; renderer.toneMappingExposure = .82
@@ -29,13 +32,10 @@ export function createWorldRenderer(canvas, city, quality = 'high') {
   const pmrem = new T.PMREMGenerator(renderer), envScene = new T.Scene(), envSky = new Sky(); envSky.scale.setScalar(50)
   for (const k of ['turbidity', 'rayleigh', 'mieCoefficient', 'mieDirectionalG']) envSky.material.uniforms[k].value = sky.material.uniforms[k].value
   envSky.material.uniforms.sunPosition.value.copy(sunDir); envScene.add(envSky)
-  let envRT = pmrem.fromScene(envScene, 0, .1, 100); scene.environment = envRT.texture; scene.environmentIntensity = .75
+  let envRT = pmrem.fromScene(envScene, 0, .1, 100); scene.environment = envRT.texture; scene.environmentIntensity = .45
+  // Reflections come from this computed sky only. (A photo sky used to replace it after loading, at a different size,
+  // which made every material compile a second time.)
   let disposed = false
-  new HDRLoader().load('/assets/sky.hdr', hdr => {
-    if (disposed) { hdr.dispose(); return }
-    hdr.mapping = T.EquirectangularReflectionMapping
-    const rt = pmrem.fromEquirectangular(hdr); hdr.dispose(); envRT.dispose(); envRT = rt; scene.environment = rt.texture
-  }, undefined, () => {})
   const hemi = new T.HemisphereLight('#dfeefa', '#8a6f52', .9); scene.add(hemi)
   const sun = new T.DirectionalLight('#ffe1b0', 3.1); sun.castShadow = high
   sun.shadow.mapSize.set(2048, 2048); Object.assign(sun.shadow.camera, { left: -40, right: 40, top: 45, bottom: -45, near: 1, far: 200 }); sun.shadow.bias = -.0004; sun.shadow.normalBias = .03
@@ -67,7 +67,7 @@ export function createWorldRenderer(canvas, city, quality = 'high') {
     sunVec.copy(light.y < .15 ? new T.Vector3(light.x, .15, light.z).normalize() : light)
     hemi.intensity = .14 + .76 * dayK; hemi.color.copy(nightHemi).lerp(dayHemi, dayK)
     fogColor.copy(nightFog).lerp(dayFog, dayK).lerp(duskFog, dusk * .45); scene.fog.color.copy(fogColor)
-    scene.environmentIntensity = .06 + .69 * dayK; renderer.toneMappingExposure = .82 + nightK * .25
+    scene.environmentIntensity = .06 + .22 * dayK; renderer.toneMappingExposure = .82 + nightK * .25
     stars.material.opacity = Math.max(0, nightK - .25); moon.material.opacity = nightK
     for (const m of silhouettes) m.material.color.copy(m.material.userData.day).lerp(nightFog, nightK * .85)
     const glow = nightK
@@ -157,13 +157,57 @@ export function createWorldRenderer(canvas, city, quality = 'high') {
   const policeLight = new T.PointLight('#ff2a3c', 0, 20, 1.6); scene.add(policeLight)
   const rageMarkers = [0, 1, 2].map(() => { const mk = new T.Sprite(new T.SpriteMaterial({ map: tex.bubble('😡 ROAD RAGE', { bg: '#e8402f', fg: '#ffffff' }), depthTest: false, depthWrite: false })); mk.scale.set(2.8, .48, 1); mk.renderOrder = 9; mk.visible = false; scene.add(mk); return mk })
   const fx = createEffects(scene, tex, high)
-  // Race furniture: a chequered finish gantry and a marker over the rival.
-  const finishLine = new T.Group(); finishLine.visible = false; scene.add(finishLine)
-  { const b = new Batch(), steel = std('#d8d8d8', .4, .6); for (const x of [-9.8, 9.8]) b.add(boxGeo(.4, 7.5, .4), steel, x, 3.75, 0)
-    b.add(new T.PlaneGeometry(19.6, 2.4), new T.MeshStandardMaterial({ map: tex.checker('FINISH'), side: T.DoubleSide, roughness: .6 }), 0, 6.6, 0)
-    b.add(boxGeo(19, .02, 1.2), new T.MeshStandardMaterial({ map: tex.checker(''), roughness: .8 }), 0, .02, 0); b.build(finishLine) }
-  // Markers over every racer: the challenger in yellow, the others in orange.
-  const rivalMarkers = [0, 1, 2].map(i => { const m = new T.Sprite(new T.SpriteMaterial({ map: tex.bubble(i ? '▼ RACER' : '▼ RIVAL', { bg: i ? '#f08a3a' : '#ffc61a', fg: '#111111' }), depthTest: false, depthWrite: false })); m.scale.set(2.6, .45, 1); m.renderOrder = 9; m.visible = false; scene.add(m); return m })
+  // Race furniture: chequered START and FINISH gantries, each with a chequered strip across the road and a flag
+  // waving on a pole either side, plus a name marker over every rival.
+  const flagMat = new T.MeshStandardMaterial({ map: tex.checker(''), side: T.DoubleSide, roughness: .7 }), flags = []
+  function gantry(text) {
+    const grp = new T.Group(); grp.visible = false; scene.add(grp)
+    const b = new Batch(), steel = std('#d8d8d8', .4, .6); for (const x of [-9.8, 9.8]) b.add(boxGeo(.4, 7.5, .4), steel, x, 3.75, 0)
+    b.add(new T.PlaneGeometry(19.6, 2.4), new T.MeshStandardMaterial({ map: tex.checker(text), side: T.DoubleSide, roughness: .6 }), 0, 6.6, 0)
+    b.add(boxGeo(19, .02, 1.2), flagMat, 0, .02, 0)
+    for (const x of [-12.2, 12.2]) b.add(boxGeo(.12, 5.2, .12), steel, x, 2.6, 0)
+    b.build(grp)
+    for (const side of [-1, 1]) {
+      const pivot = new T.Group(); pivot.position.set(side * 12.2, 4.4, 0)
+      const flag = new T.Mesh(new T.PlaneGeometry(2.6, 1.6, 8, 1), flagMat); flag.position.x = -side * 1.3; flag.castShadow = true
+      pivot.add(flag); grp.add(pivot); flags.push({ pivot, flag, side, base: flag.geometry.attributes.position.array.slice() })
+    }
+    return grp
+  }
+  const startLine = gantry('START'), finishLine = gantry('FINISH')
+  // A gantry at the end of each lap but the last: LAP 2, ..., FINAL LAP.
+  const lapLines = Array.from({ length: LAPS - 1 }, (_, i) => ({ at: (i + 1) * LAP_LENGTH, grp: gantry(i + 2 === LAPS ? 'FINAL LAP' : `LAP ${i + 2}`) }))
+  // Flags ripple: a travelling wave along the cloth, bigger towards the free end, and the whole flag swings a little on its pole.
+  function waveFlags(t) {
+    for (const [i, f] of flags.entries()) {
+      const pos = f.flag.geometry.attributes.position, a = pos.array
+      for (let v = 0; v < pos.count; v++) { const x = f.base[v * 3], free = (x * -f.side + 1.3) / 2.6; a[v * 3 + 2] = Math.sin(t * 7 + free * 5 + i) * .28 * free }
+      pos.needsUpdate = true; f.pivot.rotation.y = Math.sin(t * 1.7 + i) * .18
+    }
+  }
+  // Police checkpoints (the two vans are simulated vehicles; these are the props): cones funnelling the outer lanes into
+  // the middle one, a roadside warning sign, and an officer waving traffic through.
+  const coneGeo = new T.ConeGeometry(.22, .75, 10), coneMat = std('#ff6a13', .6), coneBand = std('#f4f4f2', .5)
+  const signMat = new T.MeshStandardMaterial({ map: tex.canvasTexture(512, 256, (c, w, h) => {
+    c.fillStyle = '#0f3d8a'; c.fillRect(0, 0, w, h); c.strokeStyle = '#fff'; c.lineWidth = 12; c.strokeRect(10, 10, w - 20, h - 20)
+    c.fillStyle = '#fff'; c.textAlign = 'center'; c.font = '900 64px Impact, Arial Black'; c.fillText('POLICE', w / 2, 92); c.fillText('CHECKPOINT', w / 2, 160)
+    c.fillStyle = '#ffc61a'; c.font = '900 44px Impact, Arial Black'; c.fillText(`SLOW · ${CHECKPOINT_SPEED} KM/H`, w / 2, 222)
+  }), roughness: .6 })
+  const checkpointProps = Array.from({ length: LAPS }, (_, i) => {
+    const grp = new T.Group(); grp.visible = false; scene.add(grp)
+    for (const side of [-1, 1]) for (let k = 0; k < 4; k++) {
+      const cone = new T.Mesh(coneGeo, coneMat), band = new T.Mesh(new T.CylinderGeometry(.13, .16, .12, 10), coneBand)
+      cone.position.set(side * (4.6 - k * .6), .375, 12 - k * 2.6); band.position.set(cone.position.x, .45, cone.position.z); cone.castShadow = true
+      grp.add(cone, band)
+    }
+    const sign = new T.Mesh(new T.PlaneGeometry(3.2, 1.6), signMat); sign.position.set(8.6, 2.4, 70)
+    const post = new T.Mesh(new T.BoxGeometry(.12, 2.2, .12), std('#9aa0a4', .5, .6)); post.position.set(8.6, 1.1, 70.05)
+    const officer = shadows(kit.person({ seed: 960 + i, uniform: true })); officer.position.set(2.5, 0, 4); officer.rotation.y = -Math.PI / 2
+    grp.add(sign, post, officer); grp.userData.officer = officer
+    return grp
+  })
+  // A marker over every rival with their street name, in their colour. Constant on-screen size, so you can pick them out at any distance.
+  const rivalMarkers = RIVALS.map(r => { const m = new T.Sprite(new T.SpriteMaterial({ map: tex.bubble(`▼ ${r.name}`, { bg: r.color, fg: '#111111' }), depthTest: false, depthWrite: false, sizeAttenuation: false, fog: false })); m.scale.set(.3, .05, 1); m.renderOrder = 9; m.visible = false; scene.add(m); return m })
   // Flooded potholes: a ragged dark crater of broken tarmac holding a sheet of muddy, mirror-like water.
   const holeMats = { rim: std('#1d1c1a', 1), mud: new T.MeshStandardMaterial({ color: '#4a3f2e', roughness: .95 }), water: new T.MeshStandardMaterial({ color: '#5b6b6c', roughness: .02, metalness: .85, envMapIntensity: 1.6, transparent: true, opacity: .9, polygonOffset: true, polygonOffsetFactor: -2 }) }
   const raggedDisc = (r, seed, wob) => { const s = new T.Shape(); for (let i = 0; i <= 18; i++) { const a = i / 18 * Math.PI * 2, k = r * (1 + (rand(seed + i % 18) - .5) * wob); i ? s.lineTo(Math.cos(a) * k, Math.sin(a) * k) : s.moveTo(k, 0) } return new T.ShapeGeometry(s).rotateX(-Math.PI / 2) }
@@ -174,7 +218,8 @@ export function createWorldRenderer(canvas, city, quality = 'high') {
   })
   // NOS bottles on the road: a blue cylinder with a chrome valve, spinning over a glowing ring.
   // Pepsi bottle: dark cola in clear plastic, blue label with the red-white-blue globe, blue cap.
-  const nosBlue = new T.MeshPhysicalMaterial({ color: '#2a1408', roughness: .1, metalness: 0, transmission: .2, transparent: true, opacity: .92, clearcoat: 1 })
+  // No transmission: it would render the whole scene a second time every frame just for these bottles.
+  const nosBlue = new T.MeshStandardMaterial({ color: '#2a1408', roughness: .08, metalness: 0, transparent: true, opacity: .88, envMapIntensity: 1.6 })
   const nosLabel = new T.MeshStandardMaterial({ map: tex.canvasTexture(256, 64, (c, w, h) => {
     c.fillStyle = '#0a2a8f'; c.fillRect(0, 0, w, h)
     for (const cx of [40, 168]) { c.fillStyle = '#ffffff'; c.beginPath(); c.arc(cx, h / 2, 22, 0, Math.PI * 2); c.fill(); c.fillStyle = '#d0102a'; c.beginPath(); c.arc(cx, h / 2, 22, Math.PI * 1.05, Math.PI * 1.95); c.fill(); c.fillStyle = '#1f4fd8'; c.beginPath(); c.arc(cx, h / 2, 22, Math.PI * .05, Math.PI * .95); c.fill() }
@@ -256,7 +301,9 @@ export function createWorldRenderer(canvas, city, quality = 'high') {
   }
 
   return {
+    isReady() { return ready },
     render(g) {
+      if (!ready) return
       const now = performance.now(), dt = Math.min((now - last) / 1000, .1); last = now
       const t = g.ambientTime
       // Build one queued vehicle per frame into the pool (idle-time warm-up).
@@ -278,14 +325,11 @@ export function createWorldRenderer(canvas, city, quality = 'high') {
       spin(player, g.speed / 3.6 * dt)
       for (const w of player.userData.wheels) if (w.userData.front) w.rotation.y = -g.steer * .4
       fx.showDamage(player, g.dmg, { braking: g.braking })
-      // Rubber on the road and tyre smoke while skidding; engine smoke once badly damaged.
+      // Rubber on the road while skidding (no tyre dust or spray); engine smoke once badly damaged.
       player.userData.wheels.forEach((w, i) => { const key = 'player' + i; if ((g.skid || 0) > .5 && g.mode === 'drive' && !w.userData.front) fx.track(key, px + w.position.x, g.z - w.position.z); else fx.stopTrack(key) })
       smokeTimer -= dt
       if (smokeTimer <= 0 && g.mode === 'drive') {
         smokeTimer = .09
-        if ((g.skid || 0) > .75) fx.puff(px + (Math.random() - .5) * 1.6, .3, g.z - 1.5, '#d6d3cc', .9, 1)
-        // Spray kicked up off a wet road.
-        if ((g.rain || 0) > .3 && Math.abs(g.speed) > 45) for (const sx of [-.8, .8]) fx.puff(px + sx, .25, g.z - 2.4, '#c5ced4', .5 + Math.abs(g.speed) / 250, .6)
         if ((g.damage || 0) > 45) fx.puff(px, 1.0, g.z + 1.6, g.damage > 80 ? '#2e2e2e' : '#9a9a9a', .7 + g.damage / 120, 1.6)
         // Wrecked: flames out of the bonnet and thick black smoke.
         if (g.wrecked) for (let i = 0; i < 3; i++) { fx.puff(px + (Math.random() - .5) * 1.2, .9 + Math.random() * .6, g.z + 1.2 + Math.random(), ['#ff6a1a', '#ffb02e', '#e8341c'][i], .8 + Math.random() * .6, .7); fx.puff(px, 1.8, g.z + 1.4, '#151515', 2.2, 2.4) }
@@ -304,18 +348,28 @@ export function createWorldRenderer(canvas, city, quality = 'high') {
           obj = acquire(k, () => { const o = shadows(isPeer ? kit.sedan(model, v.color) : kit.vehicle(v)); if (isPeer) o.add(label(`${v.name} · ${v.car}`)); return o })
           active.set(v.id, obj)
         }
-        seen.add(v.id); placeVehicle(obj, v, g, dt); if (!isPeer) showTag(obj, v, dz, g.mode)
+        seen.add(v.id); placeVehicle(obj, v, g, dt); if (!isPeer) showTag(obj, v, v.rival !== undefined ? -1 : dz, g.mode)   // rivals carry a name marker instead
         fx.showDamage(obj, v.dmg, { hazards: !isPeer && g.time < v.hold, braking: !!v.skid || (!isPeer && g.time < v.hold && v.speed > 1), time: t })
         if (v.skid && v.kind !== 'okada') for (const [i, w] of (obj.userData.wheels || []).entries()) { if (!w.userData.front) fx.track(v.id + i, v.x * ROAD_SCALE + w.position.x, v.z - w.position.z) } else for (let i = 0; i < 4; i++) fx.stopTrack(v.id + i)
-        const slot = g.race ? (g.race.rivals || [g.race.rival]).indexOf(v.id) : -1
+        const slot = !g.race ? -1 : v.rival ?? (g.race.rivals || [g.race.rival]).indexOf(v.id)
         if (v.rage && g.time < v.rage.until && rageCount < 3) { const mk = rageMarkers[rageCount++]; mk.visible = true; mk.position.set(obj.position.x, (obj.userData.belt || 1) + 2.4, obj.position.z) }
-        if (slot >= 0 && slot < 3) { const m = rivalMarkers[slot]; m.visible = true; m.position.set(obj.position.x, (obj.userData.belt || 1) + 2.4, obj.position.z); markerSeen.add(slot) }
+        // Only over rivals ahead of you: a marker beside or behind the camera would fill the screen.
+        if (slot >= 0 && slot < rivalMarkers.length && dz > 3 && g.mode === 'drive') { const m = rivalMarkers[slot]; m.visible = true; m.position.set(obj.position.x, (obj.userData.belt || 1) + 2.4, obj.position.z); markerSeen.add(slot) }
         for (const r of obj.userData.riders || []) kit.animatePerson(r, t, r.userData.role === 'agbero' ? 'agbero' : 'idle')
       }
       rivalMarkers.forEach((m, i) => { if (!markerSeen.has(i)) m.visible = false })
       rageMarkers.forEach((m, i) => { if (i >= rageCount) m.visible = false })
       for (const [id, obj] of active) if (!seen.has(id)) { release(obj); active.delete(id) }
       finishLine.visible = !!g.race?.finish; if (g.race?.finish) { const d = g.race.finish - g.z; finishLine.position.set(0, 0, -d) }
+      startLine.visible = !!g.race?.grid && g.z - g.race.start < 80; if (startLine.visible) startLine.position.set(0, 0, -(g.race.start - g.z))
+      let flagsNear = startLine.visible || (finishLine.visible && g.race.finish - g.z < 300)
+      for (const l of lapLines) { const d = g.race?.grid ? g.race.start + l.at - g.z : NaN; l.grp.visible = d > -60 && d < 600; if (l.grp.visible) { l.grp.position.set(0, 0, -d); flagsNear ||= d < 300 } }
+      if (flagsNear) waveFlags(t)
+      checkpointProps.forEach((grp, i) => {
+        const cp = g.race?.checkpoints?.[i], d = cp ? cp.z - g.z : NaN
+        grp.visible = d > -40 && d < 400
+        if (grp.visible) { grp.position.set(0, 0, -d); kit.animatePerson(grp.userData.officer, t, 'agbero') }
+      })
       for (const o of oncoming) {
         const span = 620, wz = g.z - 60 + ((((o.base - o.speed * t) - (g.z - 60)) % span) + span) % span
         o.obj.position.set(o.lane, 0, -(wz - g.z)); o.obj.rotation.y = Math.PI; o.obj.visible = wz - g.z < 260; lod(o.obj, wz - g.z); spin(o.obj, -o.speed * dt); fx.showDamage(o.obj, null, {})
@@ -421,13 +475,19 @@ export function createWorldRenderer(canvas, city, quality = 'high') {
     // Warm-up: compile every shader the drive will need, then pre-build vehicles in idle frames,
     // so nothing compiles or builds mid-drive.
     async prewarm() {
+      setTimeout(() => { ready = true }, 30e3)   // never leave the screen blank if a compile hangs
       const warm = [], add = o => { o.visible = true; o.position.set(0, -50, 0); warm.push(o) }
       for (let i = 1; i <= 3; i++) { const o = shadows(kit.police()); scene.add(o); policeObjs.set(i === 1 ? 'police' : `police${i}`, o); add(o) }
       officer = shadows(kit.person({ seed: 777, uniform: true })); officer.traverse(o => { if (o.isMesh) o.castShadow = true }); scene.add(officer); add(officer)
       for (const v of [{ kind: 'car', model: 0, tint: 0 }, { kind: 'danfo', tint: 0 }, { kind: 'keke', tint: 0 }, { kind: 'okada', tint: 0 }, { kind: 'brt' }, { kind: 'taxi', model: 0 }]) { const o = acquire(keyFor(v), () => shadows(kit.vehicle(v))); fx.fitVehicle(o); add(o) }
+      // Compile everything in the scene, hidden things too (gantries, markers, pickups, effects), so nothing compiles mid-race.
+      // One top-level object at a time with a frame in between, so the menus keep responding while it works.
+      const hidden = []; scene.traverse(o => { if (!o.visible) { hidden.push(o); o.visible = true } })
       try { await (renderer.compileAsync ? renderer.compileAsync(scene, camera) : renderer.compile(scene, camera)) } catch { /* compile on first draw instead */ }
+      for (const o of hidden) o.visible = false
       if (disposed) return
       for (const o of warm) { o.visible = false; if (o.userData.poolKey) release(o) }
+      ready = true
       for (let model = 0; model < 8; model++) for (let tint = 0; tint < 8; tint += 2) buildQueue.push({ kind: 'car', model, tint })
       for (let tint = 0; tint < 8; tint++) buildQueue.push({ kind: 'danfo', tint }, { kind: 'keke', tint: tint % 4 }, { kind: 'okada', tint: tint % 4 })
       for (let model = 0; model < 3; model++) buildQueue.push({ kind: 'taxi', model })

@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { galasNear, nitrosNear, nitroKey, NOS_MAX, vehicleWidth, newWorld, resolveContact, stepWorld, beginPursuit, updateArrest, startRace, racePosition, updateGearbox, raiseWanted, policeUnits, jamAt, potholeAt, vehicleInfo, TIER_VALUE, vehicleLength, CAR_LENGTH, ROAD_SCALE, RACE_DISTANCE } from './physics.js'
+import { galasNear, nitrosNear, nitroKey, NOS_MAX, vehicleWidth, newWorld, resolveContact, stepWorld, beginPursuit, updateArrest, startRace, racePosition, updateGearbox, raiseWanted, policeUnits, jamAt, potholeAt, vehicleInfo, TIER_VALUE, vehicleLength, CAR_LENGTH, ROAD_SCALE, RACE_DISTANCE, newRace, rushResults, RIVALS, RECKLESS_LIMIT, COUNTDOWN, START_LINE, LAPS, LAP_LENGTH, CHECKPOINT_SPEED, hitDamage } from './physics.js'
 const settings={maxSpeed:190,acceleration:30,handling:1}
 test('solid impact, separation, reverse and second hit start the pursuit',()=>{
   const g=newWorld();g.traffic=[{id:'npc0',x:0,z:40,speed:0,cruise:0,hold:1e6}];g.z=35;g.speed=40
@@ -290,4 +290,92 @@ test('a Beef Gala on the road repairs the car',()=>{
   const g=newWorld();g.traffic=[];g.damage=60;const p=galasNear(400,0,4000,nitroKey(g))[0];assert.ok(p)
   g.z=p.z-6;g.x=p.x;g.speed=60;for(let i=0;i<30;i++)stepWorld(g,{},1/60,settings)
   assert.ok(g.damage<=30.5,`healed to ${g.damage}`);assert.ok(g.galaTaken[p.id])
+})
+
+// Naija Rush
+test('naija rush: grid of four rivals, held through the 3-2-1, then everyone launches',()=>{
+  const g=newRace(),racers=g.traffic.filter(v=>v.rival!==undefined),seen=[]
+  assert.equal(racers.length,4);assert.equal(g.race.finish,START_LINE+LAPS*LAP_LENGTH);assert.equal(LAPS*LAP_LENGTH,9000);assert.equal(racePosition(g).of,5)
+  assert.ok(g.traffic.every(v=>v.kind!=='brt'),'no BRT buses in a race')
+  for(let i=0;i<60;i++){stepWorld(g,{w:true},.05,settings);seen.push(...g.events.map(e=>e.type==='countdown'?e.n:e.type));g.events=[]}
+  assert.equal(g.speed,0,'gas does nothing before GO');assert.ok(racers.every(v=>v.speed===0))
+  for(let i=0;i<40;i++){stepWorld(g,{w:true},.05,settings);seen.push(...g.events.map(e=>e.type==='countdown'?e.n:e.type));g.events=[]}
+  assert.deepEqual(seen.filter(e=>[3,2,1,'raceGo'].includes(e)),[3,2,1,'raceGo']);assert.ok(g.time>COUNTDOWN)
+  assert.ok(g.speed>0);assert.ok(racers.every(v=>v.speed>0),'rivals launch')
+})
+test('naija rush: the race runs to the chequered flag and ranks all five drivers',()=>{
+  const g=newRace();g.traffic=g.traffic.filter(v=>v.rival!==undefined)
+  const laps=[];for(let i=0;i<20000&&!g.race.done;i++){stepWorld(g,{w:true},.05,settings);laps.push(...g.events.filter(e=>e.type==='lap').map(e=>e.lap));g.events=[];if(g.police){g.police=null;g.backup=[];g.heat=0}g.reckless=0;g.damage=0;g.wrecked=false}
+  const done=g.race.done;assert.ok(done,'race finished');assert.deepEqual(laps,[2,3]);assert.equal(g.race.lapTimes.length,2)
+assert.ok(done.place>=1&&done.place<=5)
+  for(let i=0;i<8000&&g.race.finished.length<4;i++)stepWorld(g,{},.05,settings)
+  const res=rushResults(g);assert.equal(res.order.length,5);assert.deepEqual(res.order.map(e=>e.pos),[1,2,3,4,5])
+  assert.equal(res.order.find(e=>e.me).pos,done.place);assert.ok(res.order.filter(e=>!e.me).every(e=>RIVALS.some(r=>r.name===e.name)))
+  for(let i=1;i<5;i++)if(res.order[i].time!==null&&res.order[i-1].time!==null)assert.ok(res.order[i].time>=res.order[i-1].time,'ordered by time')
+})
+test('naija rush: crashing into traffic fills the reckless meter and brings olokpa',()=>{
+  const g=newRace();g.race.go=0;g.race.launched=true;g.traffic=[{id:'npc0',kind:'car',x:0,tx:0,z:g.z+6,speed:0,cruise:0,hold:1e6}];g.speed=90
+  for(let i=0;i<3;i++)stepWorld(g,{w:true},.05,settings)
+  assert.ok(g.reckless>=30&&!g.police,'one crash is not enough')
+  Object.assign(g.traffic[0],{z:g.z+6,speed:0});g.speed=90;g.contacts={}
+  for(let i=0;i<3;i++)stepWorld(g,{w:true},.05,settings)
+  assert.ok(g.police,'two crashes: police');assert.ok(g.reckless<RECKLESS_LIMIT)
+})
+test('naija rush: finishing ends the chase and pays the prize',()=>{
+  const g=newRace();g.race.go=0;g.race.launched=true;g.traffic=g.traffic.filter(v=>v.rival!==undefined);for(const v of g.traffic)v.z=0
+  beginPursuit(g);g.heat=35;g.z=g.race.finish-1;g.speed=150;g.score=0
+  stepWorld(g,{w:true},.05,settings);assert.equal(g.race.done.place,1);assert.equal(g.police,null);assert.ok(g.score>=600)
+})
+
+test('naija rush: revving on the grid, and a perfect start at GO',()=>{
+  const g=newRace(),eng={idle:750,redline:6200}
+  for(let i=0;i<30;i++)stepWorld(g,{w:true},.05,{...settings,engine:eng})
+  assert.equal(g.speed,0,'still held on the grid');assert.ok(g.rpm>5000,'free revs climb fast with the gas held')
+  for(let i=0;i<30;i++)stepWorld(g,{},.05,{...settings,engine:eng})
+  assert.ok(g.rpm<2000,'and drop back to idle off the gas')
+  // Hold around 70% of the redline at GO for the perfect start.
+  let perfect=false;for(let i=0;i<60&&!g.race.launched;i++){stepWorld(g,{w:g.rpm<4300},.05,{...settings,engine:eng});perfect||=g.events.some(e=>e.type==='perfectStart');g.events=[]}
+  assert.ok(perfect,'perfect start');assert.ok(g.speed>=25)
+})
+test('naija rush: a long police chase gives up on its own',()=>{
+  const g=newRace();g.race.go=0;g.race.launched=true;g.traffic=[];g.speed=100;beginPursuit(g);g.heat=35;g.police.z=g.z-150
+  for(let i=0;i<1100&&g.police;i++){stepWorld(g,{w:true},.05,settings);if(g.police)g.police.z=Math.min(g.police.z,g.z-150)}
+  assert.equal(g.police,null)
+})
+
+test('naija rush: a police checkpoint in every lap, two vans blocking the outer lanes',()=>{
+  const g=newRace(),vans=g.traffic.filter(v=>v.fixed)
+  assert.equal(g.race.checkpoints.length,LAPS);assert.equal(vans.length,LAPS*2)
+  assert.deepEqual(vans.slice(0,2).map(v=>v.x).sort(),[-.55,.55]);assert.ok(vans.every(v=>v.kind==='police'))
+})
+const atCheckpoint=(speed)=>{const g=newRace();g.race.go=0;g.race.launched=true;const cp=g.race.checkpoints[0];g.traffic=g.traffic.filter(v=>v.fixed);g.z=cp.z-3;g.x=0;g.speed=speed;g.score=0;return {g,cp}}
+test('naija rush: through a checkpoint slowly you are waved on',()=>{
+  const {g,cp}=atCheckpoint(CHECKPOINT_SPEED-15)
+  for(let i=0;i<20;i++)stepWorld(g,{},.05,settings)
+  assert.ok(cp.passed);assert.equal(g.police,null);assert.ok(g.score>=75)
+})
+test('naija rush: blast through a checkpoint and the police come with two stars',()=>{
+  const {g,cp}=atCheckpoint(120)
+  for(let i=0;i<5;i++)stepWorld(g,{w:true},.05,settings)
+  assert.ok(cp.passed);assert.ok(g.police,'chase on');assert.equal(g.wanted,2)
+})
+test('naija rush: checkpoint vans stay put when you hit them, and it starts a chase',()=>{
+  const g=newRace();g.race.go=0;g.race.launched=true;const van=g.traffic.find(v=>v.fixed);g.traffic=[van];g.z=van.z-8;g.x=van.x;g.speed=90
+  for(let i=0;i<10;i++)stepWorld(g,{w:true},.05,settings)
+  assert.equal(van.z,van.az);assert.equal(van.x,van.ax);assert.ok(g.police);assert.ok(g.wanted>=2)
+})
+test('naija rush: stars climb quickly in a race chase',()=>{
+  const g=newRace();g.race.go=0;g.race.launched=true;g.traffic=[];g.speed=100;beginPursuit(g);g.heat=35
+  for(let i=0;i<560;i++){stepWorld(g,{w:true},.05,settings);if(g.police){g.police.z=Math.min(g.police.z,g.z-60);for(const u of g.backup)u.z=Math.min(u.z,g.z-60)}}
+  assert.equal(g.wanted,3)
+})
+test('naija rush: road chaos keeps kicking off ahead (swerves, brake-checks, blowouts, road rage)',()=>{
+  const g=newRace();g.race.go=0;const seen={};let fights=0,crashes=0
+  for(let i=0;i<2400;i++){stepWorld(g,{w:true},.05,settings);for(const e of g.events){if(e.type==='chaos')seen[e.what]=(seen[e.what]||0)+1;if(e.type==='fight')fights++;if(e.type==='npcCrash')crashes++}g.events=[];g.damage=0;g.wrecked=false;if(g.police){g.police=null;g.backup=[];g.heat=0}g.reckless=0;g.arrested=false}
+  const total=Object.values(seen).reduce((a,b)=>a+b,0)
+  assert.ok(total>=8,`chaos events in 2 minutes: ${total}`);assert.ok(Object.keys(seen).length>=2,'more than one kind');assert.ok(fights>=1,'someone picked a fight');assert.ok(crashes>=1,'pile-ups in the traffic')
+})
+
+test('wrecking your car takes 75% more hits than before',()=>{
+  for(const a of [.05,.2,.5]){const before=100/Math.min(7,a*14+1.5),now=100/hitDamage(a);assert.ok(Math.abs(now/before-1.75)<1e-9,'hit '+a+': '+before.toFixed(1)+' hits before, '+now.toFixed(1)+' now')}
 })

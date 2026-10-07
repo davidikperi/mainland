@@ -1,8 +1,10 @@
-// "EKO FM" race mix: original high-energy Afro-electro, drum & bass and electro-house tracks in the
-// spirit of arcade racing soundtracks, synthesised live (no recordings, no licensing). Songs are
+// "EKO FM" race mix: ten original tracks, shuffled, synthesised live (no recordings, no licensing). Four are
+// Afro-electro, drum & bass and electro-house in the spirit of arcade racing soundtracks; six are in Nigerian styles
+// (Afrobeats, amapiano log drums, Afro-pop, Fuji talking drums, Afro-house, highlife guitar). They sound like the
+// genres, not like any particular song. Songs are
 // arranged in 8-bar sections (build -> drop -> break -> build -> drop) and react to the action:
 // intensity 0 is a filtered menu groove, 1 is the full drop for races and police chases.
-const MINOR = [0, 2, 3, 5, 7, 8, 10]
+const MINOR = [0, 2, 3, 5, 7, 8, 10], MAJOR = [0, 2, 4, 5, 7, 9, 11]
 const hz = m => 440 * 2 ** ((m - 69) / 12)
 const S = a => new Set(a)
 
@@ -15,6 +17,20 @@ const TRACKS = [
     kick: S([0, 10]), clap: S([4, 12]), bass: 'reese', arp: [0, 12, 7, 12, 3, 12, 7, 15] },
   { name: 'Eko Overdrive', artist: 'Ojuelegba Electric', bpm: 132, root: 42, chords: [0, 6, 5, 4], style: 'house',
     kick: S([0, 4, 8, 12]), clap: S([4, 12]), bass: 'offbeat', arp: [0, 7, 3, 7, 10, 7, 3, 7] },
+  // Nigerian styles. rim: rimshot/clave steps; shaker: 16th shakers instead of hi-hats; conga/talk: hand-drum steps;
+  // bass 'bounce' (Afrobeats) or 'log' (amapiano log drum) on bassSteps; lead 'pluck' for guitar-like riffs.
+  { name: 'Owambe Velocity', artist: 'Lagos Pulse', bpm: 104, root: 45, scale: MAJOR, chords: [0, 3, 4, 3], style: 'afrobeats',
+    kick: S([0, 7, 10]), clap: S([4, 12]), rim: S([3, 6, 10, 14]), shaker: true, bass: 'bounce', bassSteps: S([0, 3, 6, 10, 13]), lead: 'pluck', arp: [0, 2, 4, 2, 7, 4, 2, 0] },
+  { name: 'Log Drum Express', artist: 'Yaba Piano Kings', bpm: 112, root: 41, chords: [0, 5, 3, 6], style: 'amapiano',
+    kick: S([0, 4, 8, 12]), clap: S([4, 12]), rim: S([2, 7, 11, 15]), shaker: true, bass: 'log', bassSteps: S([0, 3, 6, 9, 11, 14]), arp: [0, 4, 7, 9, 7, 4, 2, 4] },
+  { name: 'Ikeja Sunset', artist: 'Ada & The Keke Boys', bpm: 100, root: 43, scale: MAJOR, chords: [0, 4, 5, 3], style: 'afrobeats',
+    kick: S([0, 6, 10]), clap: S([4, 12]), rim: S([2, 7, 10, 15]), shaker: true, bass: 'bounce', bassSteps: S([0, 4, 7, 10, 12]), arp: [4, 2, 0, 2, 4, 7, 4, 2] },
+  { name: 'Talking Drum Turbo', artist: 'Agege Fuji Machine', bpm: 120, root: 46, chords: [0, 0, 3, 4], style: 'fuji',
+    kick: S([0, 8, 11]), clap: S([4, 12]), conga: S([2, 5, 6, 9, 13, 14]), talk: S([1, 3, 7, 9, 15]), shaker: true, bass: 'bounce', bassSteps: S([0, 3, 8, 11]), lead: 'pluck', arp: [0, 3, 5, 3, 7, 5, 3, 0] },
+  { name: 'Surulere Groove', artist: 'DJ Danfo Wahala', bpm: 122, root: 44, chords: [0, 5, 6, 4], style: 'afrohouse',
+    kick: S([0, 4, 8, 12]), clap: S([4, 12]), conga: S([3, 6, 7, 11, 14]), rim: S([10]), shaker: true, bass: 'offbeat', arp: [0, 7, 10, 7, 12, 10, 7, 3] },
+  { name: 'Okada Highlife', artist: 'Ebute Metta Strings', bpm: 110, root: 48, scale: MAJOR, chords: [0, 3, 4, 0], style: 'highlife',
+    kick: S([0, 6, 8, 14]), clap: S([4, 12]), rim: S([2, 5, 8, 11, 14]), conga: S([3, 7, 15]), shaker: true, bass: 'bounce', bassSteps: S([0, 6, 8, 14]), lead: 'pluck', arp: [0, 2, 4, 7, 9, 7, 4, 2] },
 ]
 
 export function createMusic(ctx, out, noise) {
@@ -27,7 +43,8 @@ export function createMusic(ctx, out, noise) {
   const tone = ctx.createBiquadFilter(); tone.type = 'lowpass'; tone.frequency.value = 1200; tone.Q.value = .7; tone.connect(pumped)
   const delay = ctx.createDelay(1); const fb = ctx.createGain(); fb.gain.value = .3; const wet = ctx.createGain(); wet.gain.value = .22
   delay.connect(fb); fb.connect(delay); delay.connect(wet); wet.connect(tone)
-  let track = Math.floor(Math.random() * TRACKS.length), on = false, timer = null, step = 0, bar = 0, next = 0, level = .3, intensity = .5
+  // Shuffle: every track plays once, in random order, before any repeats.
+  let bag = [], track = Math.floor(Math.random() * TRACKS.length), on = false, timer = null, step = 0, bar = 0, next = 0, level = .6, intensity = .5
   const listeners = new Set()
   const tr = () => TRACKS[track], dur = () => 60 / tr().bpm / 4
 
@@ -44,7 +61,7 @@ export function createMusic(ctx, out, noise) {
     if (sweepTo) fl.frequency.exponentialRampToValueAtTime(sweepTo, t + decay)
     s.connect(fl); fl.connect(env(t, dest, peak, .002, decay)); s.start(t, Math.random() * 1.5); s.stop(t + decay + .05)
   }
-  const deg = (d, oct = 0) => { const n = MINOR.length, o = Math.floor(d / n); return tr().root + MINOR[((d % n) + n) % n] + 12 * (o + oct) }
+  const deg = (d, oct = 0) => { const sc = tr().scale || MINOR, n = sc.length, o = Math.floor(d / n); return tr().root + sc[((d % n) + n) % n] + 12 * (o + oct) }
 
   // Drums
   const kick = t => { osc(t, 'sine', 170, master, 1, .001, .3, { to: 44 }); hiss(t, 'highpass', 2500, master, .12, .015); pumped.gain.cancelScheduledValues(t); pumped.gain.setValueAtTime(.25, t); pumped.gain.linearRampToValueAtTime(1, t + dur() * 2.6) }
@@ -52,6 +69,12 @@ export function createMusic(ctx, out, noise) {
   const hat = (t, open) => hiss(t, 'highpass', 8500, master, open ? .14 : .07, open ? .2 : .035)
   const snare = (t, v = .3) => { hiss(t, 'bandpass', 2200, master, v, .1, .7); osc(t, 'triangle', 210, master, v * .6, .001, .06) }
   const talking = t => osc(t, 'sine', 260, master, .3, .008, .26, { to: 140 })
+  // Nigerian percussion and voices
+  const shaker = (t, accent) => hiss(t, 'highpass', 6500, master, accent ? .1 : .045, accent ? .07 : .04, 1.2)
+  const rim = t => { osc(t, 'triangle', 820, master, .16, .001, .04); hiss(t, 'bandpass', 3200, master, .08, .03, 3) }
+  const conga = (t, hi) => osc(t, 'sine', hi ? 330 : 215, master, .24, .002, .16, { to: hi ? 290 : 185 })
+  const logDrum = (t, m, d) => { osc(t, 'sine', hz(m), pumped, .6, .004, d, { to: hz(m) * .8 }); osc(t, 'triangle', hz(m + 12), tone, .07, .004, d * .45) }
+  const pluck = (t, m, d) => { const g = ctx.createGain(); g.gain.value = 1; g.connect(tone); g.connect(delay); osc(t, 'triangle', hz(m), g, .13, .002, d * .7); osc(t, 'sine', hz(m + 12), g, .05, .002, d * .4) }
   const crash = t => { hiss(t, 'highpass', 5000, master, .3, 1.6); osc(t, 'sine', 70, master, .7, .001, 1.1, { to: 30 }) }
   // Synths
   const bass = (t, m, d, kind) => {
@@ -72,8 +95,12 @@ export function createMusic(ctx, out, noise) {
     if (!brk && T.kick.has(s) && !(build && inBar === 7 && s > 8)) kick(t)
     if (drop || (build && intensity > .4)) { if (T.clap.has(s)) clap(t) }
     if (T.style === 'dnb' && (drop || build) && (s === 7 || s === 15) && Math.random() < .5) snare(t, .18)
-    if (!brk) hat(t, s % 4 === 2 && (drop || hot))
+    if (T.shaker) { if (!brk || s % 2 === 0) shaker(t, s % 4 === 2) }
+    else if (!brk) hat(t, s % 4 === 2 && (drop || hot))
     else if (s % 2 === 0) hat(t, false)
+    if (T.rim && sec !== 0 && T.rim.has(s)) rim(t)
+    if (T.conga && (drop || build || brk) && T.conga.has(s)) conga(t, s % 4 === 2 || s % 4 === 3)
+    if (T.talk && sec !== 0 && T.talk.has(s) && (bar % 2 === 1 || drop)) talking(t)
     if ((drop || brk) && bar % 4 === 3 && (s === 12 || s === 14 || s === 15)) talking(t)
     // Snare roll accelerating into the drop, with a riser.
     if (build && inBar >= 6) { const every = inBar === 7 ? (s >= 8 ? 1 : 2) : 4; if (s % every === 0) snare(t, .12 + (inBar - 6) * .1 + s / 80) }
@@ -85,12 +112,18 @@ export function createMusic(ctx, out, noise) {
       if (T.bass === 'offbeat' && s % 4 === 2) bass(t, root, dur() * 1.8, 'saw')
       else if (T.bass === 'rolling' && s % 2 === 1) bass(t, root + (s % 8 === 7 ? 12 : 0), dur() * .9, 'saw')
       else if (T.bass === 'reese' && (s === 0 || s === 6 || s === 10)) bass(t, root, dur() * (s === 0 ? 5 : 3.5), 'reese')
+      else if (T.bass === 'bounce' && T.bassSteps.has(s)) bass(t, root + (s >= 10 && s < 13 ? 7 : 0), dur() * 1.6, 'saw')
+      else if (T.bass === 'log' && T.bassSteps.has(s)) logDrum(t, root + [0, 0, 7, 5, 0, 10][[...T.bassSteps].indexOf(s)], dur() * 3)
     }
     // Chords: stabs in the drop, pads in the break and builds.
     if (drop && (s === 0 || s === 3 || s === 6 || s === 10 || s === 14) && intensity > .25) stab(t, chord, dur() * 1.6)
     if ((brk || build || sec === 0) && s === 0 && bar % 2 === 0) pad(t, chord, dur() * 32)
     // Arpeggio lead: the hook, saved for drops (and builds when the heat is on).
-    if ((drop && intensity > .45) || (build && hot)) lead(t, deg(chordDeg, 2) + T.arp[s % 8] - 12, dur() * .9)
+    if ((drop && intensity > .45) || (build && hot)) {
+      const m = deg(chordDeg, 2) + T.arp[s % 8] - 12
+      if (T.lead === 'pluck') { if (s % 2 === 0 || s % 8 === 3) pluck(t, m, dur() * 1.6) }
+      else lead(t, m, dur() * .9)
+    }
   }
   function schedule() {
     while (next < ctx.currentTime + .15) {
@@ -99,9 +132,12 @@ export function createMusic(ctx, out, noise) {
       if (step === 0) { bar++; if (bar >= 48) nextTrack() }   // six 8-bar sections per song
     }
   }
-  const nowPlaying = () => ({ station: 'EKO FM 97.3 · RACE MIX', name: tr().name, artist: tr().artist })
+  const nowPlaying = () => ({ station: 'EKO FM 97.3 · NAIJA SHUFFLE', name: tr().name, artist: tr().artist })
   function notify() { for (const l of listeners) l(nowPlaying()) }
-  function nextTrack() { track = (track + 1) % TRACKS.length; bar = 0; step = 0; notify() }
+  function nextTrack() {
+    if (!bag.length) { bag = TRACKS.map((_, i) => i).filter(i => i !== track); for (let i = bag.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [bag[i], bag[j]] = [bag[j], bag[i]] } }
+    track = bag.pop(); bar = 0; step = 0; notify()
+  }
   return {
     start() { if (on) return; on = true; next = ctx.currentTime + .05; step = 0; bus.gain.setTargetAtTime(level, ctx.currentTime, .4); timer = setInterval(schedule, 25); notify() },
     stop() { on = false; clearInterval(timer); bus.gain.setTargetAtTime(0, ctx.currentTime, .2) },

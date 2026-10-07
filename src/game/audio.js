@@ -13,7 +13,9 @@ export function createAudio() {
     ctx = new AC()
     noise = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate)
     const data = noise.getChannelData(0); for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1
-    const master = ctx.createGain(); master.gain.value = muted ? 0 : .5; master.connect(ctx.destination)
+    // Limiter on the final mix, so louder music on top of the engine and crashes never distorts.
+    const limiter = ctx.createDynamicsCompressor(); limiter.threshold.value = -3; limiter.knee.value = 2; limiter.ratio.value = 20; limiter.attack.value = .002; limiter.release.value = .12; limiter.connect(ctx.destination)
+    const master = ctx.createGain(); master.gain.value = muted ? 0 : .5; master.connect(limiter)
     const sfx = ctx.createGain(); sfx.gain.value = sfxLevel; sfx.connect(master)
     const musicBus = ctx.createGain(); musicBus.gain.value = musicLevel; musicBus.connect(master)
     music = createMusic(ctx, musicBus, noise); if (pendingListener) music.onChange(pendingListener); if (musicOn) music.start()
@@ -21,10 +23,14 @@ export function createAudio() {
     const gain = (v, out = sfx) => { const g = ctx.createGain(); g.gain.value = v; g.connect(out); return g }
     // The pulse-train engine runs as an AudioWorklet; the oscillator engine below is the fallback.
     engineOut = gain(0)
+    // Deeper voice: lift the lows and the low-mids (the chest of the exhaust), soften the fizzy top.
+    const deep = ctx.createBiquadFilter(); deep.type = 'lowshelf'; deep.frequency.value = 170; deep.gain.value = 9; deep.connect(engineOut)
+    const chest = ctx.createBiquadFilter(); chest.type = 'peaking'; chest.frequency.value = 320; chest.Q.value = .8; chest.gain.value = 3; chest.connect(deep)
+    const tame = ctx.createBiquadFilter(); tame.type = 'highshelf'; tame.frequency.value = 3000; tame.gain.value = -6; tame.connect(chest)
     if (ctx.audioWorklet) ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([ENGINE_WORKLET], { type: 'application/javascript' }))).then(() => {
       if (!ctx) return
       engineNode = new AudioWorkletNode(ctx, 'engine-synth', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [1] })
-      engineNode.connect(engineOut); engineKey = ''
+      engineNode.connect(tame); engineKey = ''
     }).catch(() => { /* keep the oscillator engine */ })
     // Engine: firing-frequency harmonics + exhaust noise -> saturation -> load-dependent filter -> body EQ.
     const engineGain = gain(0), body = ctx.createBiquadFilter(); body.type = 'peaking'; body.frequency.value = 110; body.gain.value = 7; body.Q.value = 1; body.connect(engineGain)
@@ -40,6 +46,10 @@ export function createAudio() {
     // Intake / injection hiss
     const intakeGain = gain(0), intakeHp = ctx.createBiquadFilter(); intakeHp.type = 'highpass'; intakeHp.frequency.value = 2400; intakeHp.connect(intakeGain)
     const intake = ctx.createBufferSource(); intake.buffer = noise; intake.loop = true; intake.connect(intakeHp); intake.start()
+    // Growl: a saturated tone an octave under the firing note (two octaves for the sub), low-passed, swelling with throttle.
+    const growlGain = gain(0), growlLp = ctx.createBiquadFilter(); growlLp.type = 'lowpass'; growlLp.frequency.value = 220; growlLp.Q.value = 1.1; growlLp.connect(growlGain)
+    const growlDrive = ctx.createWaveShaper(); growlDrive.curve = curve(2.5); growlDrive.connect(growlLp)
+    const growl = osc('sawtooth', 25, growlDrive), growlSubGain = gain(.6, growlLp), growlSub = osc('sine', 12, growlSubGain)
     const sirenGain = gain(0), hornGain = gain(0)
     // Tyre squeal: band-passed noise plus a wavering tone.
     const skidGain = gain(0), skidBand = ctx.createBiquadFilter(); skidBand.type = 'bandpass'; skidBand.frequency.value = 1400; skidBand.Q.value = 5; skidBand.connect(skidGain)
@@ -50,7 +60,7 @@ export function createAudio() {
     const rain = ctx.createBufferSource(); rain.buffer = noise; rain.loop = true; rain.connect(rainHp); rain.start()
     const washGain = gain(0), washLp = ctx.createBiquadFilter(); washLp.type = 'lowpass'; washLp.frequency.value = 500; washLp.connect(washGain)
     const wash = ctx.createBufferSource(); wash.buffer = noise; wash.loop = true; wash.connect(washLp); wash.start(0, .7)
-    n = { master, sfx, musicBus, engineGain, filter, shaper, exhaustBand, exhaustGain, fire, sub, second, lope, lopeGain, intakeGain, turbo, turboGain, sirenGain, siren: osc('triangle', 700, sirenGain), hornGain, h1: osc('square', 392, hornGain), h2: osc('square', 494, hornGain), skidGain, squeal, rainGain, washGain }
+    n = { growl, growlSub, growlLp, growlGain, master, sfx, musicBus, engineGain, filter, shaper, exhaustBand, exhaustGain, fire, sub, second, lope, lopeGain, intakeGain, turbo, turboGain, sirenGain, siren: osc('triangle', 700, sirenGain), hornGain, h1: osc('square', 392, hornGain), h2: osc('square', 494, hornGain), skidGain, squeal, rainGain, washGain }
   }
   // One-shot helpers
   function burst({ type = 'bandpass', freq = 800, q = 1, level = .5, decay = .4, delay = 0 }) {
@@ -81,24 +91,31 @@ export function createAudio() {
       n.exhaustBand.frequency.setTargetAtTime(Math.min(5000, f * 3.5), now, .03); n.exhaustGain.gain.setTargetAtTime(.08 + throttle * .25 + bark * .3, now, .05)
       n.filter.frequency.setTargetAtTime(220 + r * 2000 * (.45 + throttle * .55) + throttle * 400 + bark * 1600, now, .05)
       n.intakeGain.gain.setTargetAtTime(playing ? (engine.intake || .2) * (.004 + throttle * r * .03) : 0, now, .06)
+      // Growl follows the firing note an octave down; it opens up and gets louder on the throttle, more for V8s.
+      n.growl.frequency.setTargetAtTime(f / 2, now, .02); n.growlSub.frequency.setTargetAtTime(f / 4, now, .02)
+      n.growlLp.frequency.setTargetAtTime(150 + throttle * 220 + r * 180, now, .05)
+      const growlLevel = playing ? (.05 + throttle * .13 + r * .06 + bark * .05) * (cyl === 8 ? 1.3 : cyl === 6 ? 1.1 : 1) : 0
       n.lope.frequency.setTargetAtTime(cyl === 8 ? f / 4 : f / 2, now, .03); n.lopeGain.gain.setTargetAtTime(playing ? (engine.lope || .05) * (.13 - r * .06) : 0, now, .05)
       const shift = gear !== lastGear; lastGear = gear
       const worklet = !!engineNode, oscLevel = worklet ? 0 : 1
       if (worklet) {
         const k = `${cyl}:${engine.header}:${engine.tail}`
         if (k !== engineKey) { engineKey = k; engineNode.port.postMessage(engine) }
-        engineNode.parameters.get('rpm').setTargetAtTime(rpm, now, .03); engineNode.parameters.get('throttle').setTargetAtTime(throttle, now, .04)
+        engineNode.parameters.get('rpm').setTargetAtTime(rpm, now, .015); engineNode.parameters.get('throttle').setTargetAtTime(throttle, now, .04)
       }
       // Torque cut on upshift: a quick dip, then the next gear pulls.
-      const level = playing ? .1 + throttle * .08 + r * .03 + bark * .05 : 0, wLevel = playing ? .42 + throttle * .22 + bark * .12 : 0
+      // Louder with revs as well as throttle, so every climb through the gears (and a free rev on the grid) is heard rising.
+      const level = playing ? .08 + throttle * .08 + r * .07 + bark * .05 : 0, wLevel = playing ? .3 + throttle * .26 + r * .24 + bark * .16 : 0
       if (shift && playing) {
         n.engineGain.gain.cancelScheduledValues(now); n.engineGain.gain.setTargetAtTime(.04 * oscLevel, now, .02)
         engineOut.gain.cancelScheduledValues(now); engineOut.gain.setTargetAtTime(wLevel * .3, now, .02)
+        n.growlGain.gain.cancelScheduledValues(now); n.growlGain.gain.setTargetAtTime(growlLevel * .3, now, .02)
         if (turbo) burst({ type: 'highpass', freq: 3500, level: .12 * turbo / 5 + .04, decay: .35 })
-      } else { n.engineGain.gain.setTargetAtTime(level * oscLevel, now, .06); engineOut.gain.setTargetAtTime(worklet ? wLevel : 0, now, .06) }
+      } else { n.engineGain.gain.setTargetAtTime(level * oscLevel, now, .06); engineOut.gain.setTargetAtTime(worklet ? wLevel : 0, now, .06); n.growlGain.gain.setTargetAtTime(growlLevel, now, .06) }
       n.turbo.frequency.setTargetAtTime(1800 + r * 6000, now, .1); n.turboGain.gain.setTargetAtTime(playing && turbo ? throttle * r * .006 * turbo : 0, now, .15)
       // Lift off at high revs: exhaust pops and crackle.
-      if (playing && lastThrottle > .6 && throttle < .2 && rpm > 3800 && (engine.rasp || 0) > .35) for (let i = 0; i < 4 + Math.floor(Math.random() * 4); i++) burst({ type: 'bandpass', freq: 500 + Math.random() * 900, q: .8, level: .18 + Math.random() * .15, decay: .05, delay: .08 + i * (.06 + Math.random() * .1) })
+      // Every engine pops a little on the overrun; raspy ones crackle hard.
+      if (playing && lastThrottle > .6 && throttle < .2 && rpm > 3600) { const k = .5 + (engine.rasp || .3); for (let i = 0; i < 3 + Math.floor(Math.random() * 3 * k); i++) burst({ type: 'bandpass', freq: 500 + Math.random() * 900, q: .8, level: (.1 + Math.random() * .12) * k, decay: .05, delay: .08 + i * (.06 + Math.random() * .1) }) }
       lastThrottle = throttle
       // Long rising-and-falling wail
       n.siren.frequency.setTargetAtTime(700 + (Math.sin(time * Math.PI / 1.6) * .5 + .5) * 650, now, .05)
@@ -134,6 +151,11 @@ export function createAudio() {
       if (!ready()) return
       if (close > .6) burst({ type: 'highpass', freq: 1200, level: .35 * close, decay: .35 })
       for (let i = 0; i < 5; i++) burst({ type: 'lowpass', freq: 90 + Math.random() * 120, q: .7, level: (.5 + close * .4) * (1 - i * .15), decay: 1.4 + Math.random(), delay: (1 - close) * 1.5 + i * .35 + Math.random() * .3 })
+    },
+    // Start lights: a short beep for 3, 2, 1 and a long high one for GO.
+    countdown(go = false) {
+      if (!ready()) return
+      tone({ type: 'square', freq: go ? 1320 : 660, level: .07, decay: go ? .7 : .22 }); tone({ type: 'triangle', freq: go ? 1320 : 660, level: .16, decay: go ? .8 : .26 })
     },
     // NOS bottle picked up: a bright two-note chime.
     nitroPickup() {

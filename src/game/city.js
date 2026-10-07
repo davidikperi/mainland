@@ -22,15 +22,16 @@ export const CITIES = {
   },
 }
 
+// price: RP to unlock in the garage (0 = free from the start). Top speeds are kept modest so racing through traffic stays readable.
 export const CARS = [
-  { name: 'Peugeot 504', year: '1982', tag: 'THE ORIGINAL OG', speed: 155, acceleration: 24, handling: 64, engine: { cyl: 4, idle: 850, redline: 5500, rasp: .75, lope: .14, wake: 3000, intake: .2, header: .7, tail: 2.2, muffle: .35, label: '2.0 XN1 OHV I4 · carb' } },
-  { name: 'Mercedes 190E', year: '1991', tag: 'GERMAN MACHINE', speed: 190, acceleration: 32, handling: 76, engine: { cyl: 4, idle: 750, redline: 6200, rasp: .28, lope: .03, wake: 4200, intake: .55, header: .9, tail: 2.8, muffle: .85, label: '2.3 M102 I4 · fuel injection' } },
-  { name: 'Toyota Camry', year: '2003', tag: 'BIG DADDY', speed: 210, acceleration: 38, handling: 80, engine: { cyl: 6, idle: 650, redline: 6200, rasp: .3, lope: .02, wake: 4600, intake: .35, header: .6, tail: 3.0, muffle: .7, label: '3.0 1MZ-FE V6' } },
-  { name: 'Dodge Challenger', year: '2023', tag: 'NEW SCHOOL MUSCLE', speed: 280, acceleration: 52, handling: 70, engine: { cyl: 8, idle: 620, redline: 5800, rasp: .6, lope: .4, wake: 3200, intake: .2, header: 1.0, tail: 2.4, muffle: .3, label: '5.7 HEMI V8' } },
-  { name: 'Toyota Corolla', year: '2005', tag: 'DADDY GO SLOW', speed: 175, acceleration: 28, handling: 74, engine: { cyl: 4, idle: 700, redline: 6400, rasp: .3, lope: .02, wake: 4800, intake: .45, header: .6, tail: 2.6, muffle: .8, label: '1.8 1ZZ-FE I4 · VVT-i' } },
-  { name: 'Honda Accord', year: '2008', tag: 'EVIL SPIRIT', speed: 225, acceleration: 42, handling: 82, engine: { cyl: 6, idle: 680, redline: 6800, rasp: .38, lope: .03, wake: 4300, intake: .5, header: .7, tail: 2.8, muffle: .6, label: '3.5 J35 V6 · i-VTEC' } },
-  { name: 'Lexus RX 350', year: '2010', tag: 'BIG MAN JEEP', speed: 205, acceleration: 37, handling: 62, engine: { cyl: 6, idle: 640, redline: 6300, rasp: .22, lope: .02, wake: 4800, intake: .3, header: .65, tail: 3.2, muffle: .9, label: '3.5 2GR-FE V6' } },
-  { name: 'Mercedes G63', year: '2021', tag: 'DO YOU KNOW WHO I AM', speed: 245, acceleration: 50, handling: 58, engine: { cyl: 8, idle: 650, redline: 6500, rasp: .65, lope: .3, wake: 3000, intake: .35, header: .85, tail: 2.2, muffle: .35, label: '4.0 M177 biturbo V8' } },
+  { name: 'Peugeot 504', year: '1982', tag: 'THE ORIGINAL OG', price: 0, speed: 120, acceleration: 21, handling: 64, engine: { cyl: 4, idle: 850, redline: 5500, rasp: .75, lope: .14, wake: 3000, intake: .2, header: .7, tail: 2.2, muffle: .35, label: '2.0 XN1 OHV I4 · carb' } },
+  { name: 'Mercedes 190E', year: '1991', tag: 'GERMAN MACHINE', price: 0, speed: 140, acceleration: 27, handling: 76, engine: { cyl: 4, idle: 750, redline: 6200, rasp: .28, lope: .03, wake: 4200, intake: .55, header: .9, tail: 2.8, muffle: .85, label: '2.3 M102 I4 · fuel injection' } },
+  { name: 'Toyota Camry', year: '2003', tag: 'BIG DADDY', price: 2500, speed: 150, acceleration: 32, handling: 80, engine: { cyl: 6, idle: 650, redline: 6200, rasp: .3, lope: .02, wake: 4600, intake: .35, header: .6, tail: 3.0, muffle: .7, label: '3.0 1MZ-FE V6' } },
+  { name: 'Dodge Challenger', year: '2023', tag: 'NEW SCHOOL MUSCLE', price: 12000, speed: 195, acceleration: 44, handling: 70, engine: { cyl: 8, idle: 620, redline: 5800, rasp: .6, lope: .4, wake: 3200, intake: .2, header: 1.0, tail: 2.4, muffle: .3, label: '5.7 HEMI V8' } },
+  { name: 'Toyota Corolla', year: '2005', tag: 'DADDY GO SLOW', price: 0, speed: 130, acceleration: 24, handling: 74, engine: { cyl: 4, idle: 700, redline: 6400, rasp: .3, lope: .02, wake: 4800, intake: .45, header: .6, tail: 2.6, muffle: .8, label: '1.8 1ZZ-FE I4 · VVT-i' } },
+  { name: 'Honda Accord', year: '2008', tag: 'EVIL SPIRIT', price: 5000, speed: 160, acceleration: 36, handling: 82, engine: { cyl: 6, idle: 680, redline: 6800, rasp: .38, lope: .03, wake: 4300, intake: .5, header: .7, tail: 2.8, muffle: .6, label: '3.5 J35 V6 · i-VTEC' } },
+  { name: 'Lexus RX 350', year: '2010', tag: 'BIG MAN JEEP', price: 3500, speed: 150, acceleration: 31, handling: 62, engine: { cyl: 6, idle: 640, redline: 6300, rasp: .22, lope: .02, wake: 4800, intake: .3, header: .65, tail: 3.2, muffle: .9, label: '3.5 2GR-FE V6' } },
+  { name: 'Mercedes G63', year: '2021', tag: 'DO YOU KNOW WHO I AM', price: 9000, speed: 175, acceleration: 42, handling: 58, engine: { cyl: 8, idle: 650, redline: 6500, rasp: .65, lope: .3, wake: 3000, intake: .35, header: .85, tail: 2.2, muffle: .35, label: '4.0 M177 biturbo V8' } },
 ]
 
 // What other road users shout at you, in Lagos pidgin and street slang.

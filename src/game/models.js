@@ -71,15 +71,17 @@ export function createModelKit(tex, city) {
   const M = (key, make) => { if (!mats.has(key)) mats.set(key, make()); return mats.get(key) }
   const G = (key, make) => { if (!geos.has(key)) geos.set(key, make()); return geos.get(key) }
   const std = (color, roughness = .75, metalness = 0, extra = {}) => M(`s:${color}:${roughness}:${metalness}:${extra.emissive || ''}`, () => new T.MeshStandardMaterial({ color, roughness, metalness, ...extra }))
-  const paint = color => M(`p:${color}`, () => { const m = new T.MeshPhysicalMaterial({ color, roughness: .26, metalness: .5, clearcoat: 1, clearcoatRoughness: .05, envMapIntensity: 1.35 }); m.userData.smooth = true; return m })
+  // Paint and glass use the standard material: the physical clearcoat shader cost seconds of start-up compile. Low roughness and
+  // strong reflections keep the polished look.
+  const paint = color => M(`p:${color}`, () => { const m = new T.MeshStandardMaterial({ color, roughness: .28, metalness: .2, envMapIntensity: .9 }); m.userData.smooth = true; return m })
   const textured = (key, map, extra = {}) => M(`t:${key}`, () => new T.MeshStandardMaterial({ map: typeof map === 'function' ? map() : map, roughness: .55, ...extra }))
   // Tinted see-through glass for hollow cabins; opaque dark glass for solid bodies.
-  const glass = M('glass', () => new T.MeshPhysicalMaterial({ color: '#1d2a30', roughness: .03, metalness: .1, clearcoat: 1, side: T.DoubleSide, envMapIntensity: 1.6, transparent: true, opacity: .5, depthWrite: false }))
-  const glassDark = M('glassDark', () => new T.MeshPhysicalMaterial({ color: '#141d22', roughness: .04, metalness: .2, clearcoat: 1, side: T.DoubleSide, envMapIntensity: 1.8 }))
+  const glass = M('glass', () => new T.MeshStandardMaterial({ color: '#1d2a30', roughness: .03, metalness: .1, side: T.DoubleSide, envMapIntensity: 1.8, transparent: true, opacity: .5, depthWrite: false }))
+  const glassDark = M('glassDark', () => new T.MeshStandardMaterial({ color: '#141d22', roughness: .04, metalness: .2, side: T.DoubleSide, envMapIntensity: 2 }))
   const chrome = std('#d9dee0', .18, 1), rubber = std('#161616', .92), trim = std('#1c1d1f', .6), headlamp = std('#fff9e6', .2, 0, { emissive: '#fff4cf', emissiveIntensity: .5 })
   const taillamp = std('#8f0d14', .3, 0, { emissive: '#ff1d1d', emissiveIntensity: .45 }), indicator = std('#e88f1c', .3, 0, { emissive: '#ff9a1f', emissiveIntensity: .3 })
   taillamp.userData.tail = true
-  const paintDouble = color => M(`pd:${color}`, () => new T.MeshPhysicalMaterial({ color, roughness: .26, metalness: .5, clearcoat: 1, clearcoatRoughness: .05, envMapIntensity: 1.35, side: T.DoubleSide }))
+  const paintDouble = color => M(`pd:${color}`, () => new T.MeshStandardMaterial({ color, roughness: .28, metalness: .2, envMapIntensity: .9, side: T.DoubleSide }))
   const decal = (key, make, extra = {}) => M(`d:${key}`, () => { const map = make(); const mat = new T.MeshStandardMaterial({ map, transparent: true, alphaTest: .05, roughness: .35, metalness: .6, ...extra }); mat.userData.detail = mat.userData.noShadow = true; return mat })
   // Rear lamp cluster: its texture doubles as the emissive map, so brake lights can glow per vehicle.
   const tailMat = style => M(`tail:${style}`, () => { const map = tex.tailLight(style); const m = new T.MeshStandardMaterial({ map, emissiveMap: map, emissive: '#ffffff', emissiveIntensity: .35, roughness: .3 }); m.userData.tail = true; return m })
