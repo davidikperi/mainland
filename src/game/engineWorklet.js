@@ -23,7 +23,9 @@ class EngineSynth extends AudioWorkletProcessor {
   configure(o) {
     const cyl = o.cyl || 4
     // Firing angles over the 720° four-stroke cycle, and which exhaust bank each pulse enters.
-    if (cyl === 8) { this.fires = [0, 90, 180, 270, 360, 450, 540, 630]; this.banks = [0, 1, 0, 0, 1, 0, 1, 1] }
+    if (cyl === 8 && o.flat) { this.fires = [0, 90, 180, 270, 360, 450, 540, 630]; this.banks = [0, 1, 0, 1, 0, 1, 0, 1] }   // flat-plane: a screaming even beat
+    else if (cyl === 8) { this.fires = [0, 90, 180, 270, 360, 450, 540, 630]; this.banks = [0, 1, 0, 0, 1, 0, 1, 1] }
+    else if (cyl > 8) { this.fires = Array.from({ length: cyl }, (_, i) => i * 720 / cyl); this.banks = this.fires.map((_, i) => i % 2) }   // V10, W16: evenly spaced, alternating banks
     else if (cyl === 6) { this.fires = [0, 120, 240, 360, 480, 600]; this.banks = [0, 1, 0, 1, 0, 1] }
     else { this.fires = [0, 180, 360, 540]; this.banks = [0, 0, 0, 0] }
     this.dual = cyl > 4

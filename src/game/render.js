@@ -338,7 +338,8 @@ export function createWorldRenderer(canvas, city, quality = 'high') {
       // Traffic and remote players
       const seen = new Set(), markerSeen = new Set()
       let rageCount = 0
-      for (const v of [...g.traffic, ...g.peers]) {
+      // The garage shows just your car on the turntable: no traffic driving through the shot.
+      for (const v of g.mode === 'garage' ? [] : [...g.traffic, ...g.peers]) {
         const dz = v.z - g.z; if (dz < -40 || dz > 300) continue
         const isPeer = !!v.name, model = isPeer ? Math.max(0, peerModel.indexOf(v.car)) : v.model
         const k = isPeer ? `peer:${v.id}:${model}:${v.color}` : keyFor(v)
@@ -460,9 +461,9 @@ export function createWorldRenderer(canvas, city, quality = 'high') {
       renderer.setScissorTest(false); renderer.setViewport(0, 0, canvas.clientWidth, canvas.clientHeight)
       renderer.render(scene, camera)
       if (import.meta.env.DEV) { window.__drawCalls = renderer.info.render.calls; window.__scene = scene }
-      // Rear-view mirror while olokpa is on your tail
-      if (p && g.mode === 'drive' && p.phase !== 'arrested') {
-        // Bottom right on desktop; on phones the touch buttons own the bottom, so it sits under the top HUD.
+      // Rear-view mirror while olokpa is on your tail (not on phones, tablets or small windows: it covered the road ahead).
+      if (p && g.mode === 'drive' && p.phase !== 'arrested' && !coarse.matches && canvas.clientWidth > 820 && canvas.clientHeight > 520) {
+        // Bottom right; in a narrow window it sits centred under the top HUD.
         const cw = canvas.clientWidth, ch = canvas.clientHeight, narrow = cw < 820 || coarse.matches
         const mw = narrow ? Math.min(260, cw * .5) : Math.min(300, cw * .34), mh = mw / 3.4, mx = narrow ? (cw - mw) / 2 : cw - mw - 18, my = narrow ? ch - mh - (cw < ch ? 168 : 70) : ch - mh - 78
         mirrorCam.position.set(px, 1.9, -1); mirrorCam.lookAt(px, 1.2, 30)

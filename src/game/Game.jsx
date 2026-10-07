@@ -10,12 +10,14 @@ import './game.css'
 
 const colors = ['#d3f35d', '#e8402f', '#1f6fd1', '#f2f0ea', '#151515', '#1f8a4c', '#f2b41e', '#7a2fb3']
 const FREE_CARS = CARS.flatMap((c, i) => c.price ? [] : [i])
-const initial = { name: '', color: colors[1], avatar: '01', points: 0, car: 0, owned: FREE_CARS, upgrades: [0, 0, 0], onboarded: false }
+// Everyone starts in the Dodge Challenger.
+const DEFAULT_CAR = CARS.findIndex(c => c.name === 'Dodge Challenger')
+const initial = { name: '', color: colors[1], avatar: '01', points: 0, car: DEFAULT_CAR, owned: FREE_CARS, upgrades: [0, 0, 0], onboarded: false }
 // Street names to pick from during onboarding.
 // Each upgrade level costs more than the last: 22,500 RP to max one out.
 const UPGRADE_PRICES = [1000, 2000, 3500, 6000, 10000]
 const NAME_IDEAS = ['Lagos Legend', 'Danfo King', 'Oga Driver', 'Island Boss', 'Third Mainland', 'Eko Speedster', 'Agbero Chief', 'Ojuelegba Flash', 'Mama Put Racer', 'Area Father']
-function readSave() { try { const p = JSON.parse(localStorage.getItem('mainland-save') || 'null'); return p && CARS[p.car] && Array.isArray(p.upgrades) ? { ...initial, ...p, owned: [...new Set([...(p.owned || FREE_CARS), p.car])] } : initial } catch { return initial } }
+function readSave() { try { const p = JSON.parse(localStorage.getItem('mainland-save') || 'null'); return p && CARS[p.car] && Array.isArray(p.upgrades) ? { ...initial, ...p, owned: [...new Set([...FREE_CARS, ...(p.owned || []), p.car])] } : initial } catch { return initial } }
 // Anonymous per-browser ID for the admin play stats (random, no personal data).
 function deviceId() { try { let d = localStorage.getItem('mainland-device'); if (!d) { d = crypto.randomUUID(); localStorage.setItem('mainland-device', d) } return d } catch { return 'guest' } }
 const blankHud = { speed: 0, distance: 0, wanted: 0, message: '', race: null, damage: 0, arrested: false, policePhase: null, arrest: 0, escape: 0, policeDistance: null, blips: [] }
@@ -54,6 +56,8 @@ function rainTarget(mode, seconds) {
 }
 
 const ORDINAL = ['1ST', '2ND', '3RD', '4TH', '5TH']
+// When to use the lean mobile HUD: a touch screen, or a phone-sized window (narrow, or a short landscape screen).
+const MOBILE_QUERY = '(pointer: coarse), (max-width: 820px), (max-height: 520px)'
 // Power-up drawings for the pre-race briefing (they match the pickups on the road).
 const PEPSI_ICON = <svg viewBox="0 0 40 80" aria-hidden="true"><rect x="15" y="0" width="10" height="6" rx="1.5" fill="#1d4fd8" /><path d="M15 6h10v6l5 8v52a6 6 0 0 1-6 6h-8a6 6 0 0 1-6-6V20l5-8z" fill="#2a1408" stroke="rgba(255,255,255,.55)" strokeWidth="1.5" /><rect x="10.8" y="34" width="18.4" height="20" fill="#0a2a8f" /><circle cx="20" cy="44" r="6.5" fill="#fff" /><path d="M13.5 44a6.5 6.5 0 0 1 13 0c-3 -2 -9 2 -13 0z" fill="#e32636" /><path d="M13.5 44a6.5 6.5 0 0 0 13 0c-3 2 -9 -2 -13 0z" fill="#1d4fd8" /><path d="M17 22v44" stroke="rgba(255,255,255,.25)" strokeWidth="2" /></svg>
 const GALA_ICON = <svg viewBox="0 0 96 50" aria-hidden="true"><path d="M8 10h80v30H8z" fill="#d6261c" /><path d="M2 12l6 -2v30l-6 -2 3 -6.5 -3 -6.5 3 -6.5z M94 12l-6 -2v30l6 -2 -3 -6.5 3 -6.5 -3 -6.5z" fill="#b51d14" /><path d="M8 18h80v14H8z" fill="#ffd21a" /><text x="48" y="29.5" textAnchor="middle" fontFamily="Arial Black, Arial" fontWeight="900" fontStyle="italic" fontSize="12" fill="#d6261c">GALA</text><text x="48" y="15.5" textAnchor="middle" fontFamily="Arial" fontWeight="700" fontSize="5.5" fill="#fff">BEEF SAUSAGE ROLL</text></svg>
@@ -86,14 +90,19 @@ export default function Game() {
   const [whip, setWhip] = useState(null), [nitroFx, setNitroFx] = useState(0)
   const [hud, setHud] = useState(blankHud), [toast, setToast] = useState(null), [renderError, setRenderError] = useState(''), [chat, setChat] = useState([])
   const runPending = useRef(false)
+  // Phones, tablets and any small window: a stripped-down HUD (position, RP, speed, damage, buttons) so the road
+  // stays visible. Follows the screen live (rotating, resizing, DevTools device mode).
+  const [touch, setTouch] = useState(() => typeof matchMedia !== 'undefined' && matchMedia(MOBILE_QUERY).matches)
+  useEffect(() => { const q = matchMedia(MOBILE_QUERY), on = () => setTouch(q.matches); q.addEventListener('change', on); return () => q.removeEventListener('change', on) }, [])
   // Pre-race briefing on the Pepsi and Gala pickups; the countdown waits for START RACE (or Enter/Space).
   const [briefing, setBriefing] = useState(false), briefingRef = useRef(false)
   const [skipBriefing, setSkipBriefing] = useState(() => { try { return localStorage.getItem('mainland-skip-briefing') === '1' } catch { return false } })
   useEffect(() => { briefingRef.current = briefing }, [briefing])
   useEffect(() => { try { localStorage.setItem('mainland-skip-briefing', skipBriefing ? '1' : '0') } catch { /* private mode */ } }, [skipBriefing])
   // The car on the garage turntable: any car, owned or not (racing uses profile.car, always an owned one).
-  const [viewCar, setViewCar] = useState(null), viewRef = useRef(null)
-  useEffect(() => { viewRef.current = viewCar }, [viewCar])
+  const [viewCar, setViewCarState] = useState(null), viewRef = useRef(null)
+  // The 3D turntable reads the ref every frame, so set both together (an effect would lag a render behind).
+  const setViewCar = i => { viewRef.current = i; setViewCarState(i) }
   // Shaders compile in the background after load; the race can't start until they're done.
   const [warm, setWarm] = useState(false)
   // Game events for the admin panel's stats.
@@ -324,6 +333,18 @@ export default function Game() {
   const timeButton = <button className="round-btn time-btn" aria-label={`Time of day: ${TIME_MODES[timeMode]}`} title="Time of day (T)" onClick={cycleTime}>{timeMode === 'night' ? '☾' : timeMode === 'day' ? '☀' : timeMode === 'live' ? '🕑' : '◐'}<small>{TIME_MODES[timeMode]}</small></button>
   const coins = <div className="coins"><i>₦</i>{profile.points.toLocaleString()}<small>RP</small></div>
   const gaugeR = 54, arc = Math.PI * 1.5 * gaugeR, fill = Math.min(1, Math.abs(hud.speed) / maxSpeed)
+  const wantedStars = hud.wanted > 0 && <div className="wanted">{[1, 2, 3].map(s => <b key={s} className={s <= hud.wanted ? 'on' : ''}>★</b>)}</div>
+  const recklessChip = hud.reckless > .02 && <div className={`chip reckless ${hud.reckless > .75 ? 'hot' : ''}`}><span>{hud.reckless > .75 ? 'OLOKPA DEY WATCH YOU!' : 'RECKLESS DRIVING'}</span><i style={{ width: `${hud.reckless * 100}%` }} /></div>
+  const meters = (
+          <div className="gauge-wrap">
+          {(hud.nitro > 0 || hud.boost) && <div className={`nos-chip ${hud.boost ? 'burning' : ''}`}>{hud.boost ? 'PEPSI POWER!!' : <>PEPSI {'🥤'.repeat(hud.nitro)}<kbd>N</kbd></>}</div>}
+          {hud.damage > 0 && <div className={`damage ${hud.damage > 70 ? 'bad' : hud.damage > 35 ? 'mid' : ''}`}><span>DAMAGE</span><i><em style={{ width: `${hud.damage}%` }} /></i></div>}
+          <div className="gauge">
+            <svg viewBox="-64 -64 128 128"><circle r={gaugeR} className="g-track" strokeDasharray={`${arc} 999`} transform="rotate(135)" /><circle r={gaugeR} className="g-fill" strokeDasharray={`${arc * fill} 999`} transform="rotate(135)" /></svg>
+            <div><strong>{Math.abs(hud.speed)}</strong><small>KM/H</small><b>{hud.gear < 0 ? 'R' : hud.speed === 0 ? 'N' : hud.gear}</b><i className={`rpm ${hud.rpm > .9 ? 'red' : ''}`}><em style={{ width: `${Math.min(100, hud.rpm * 100)}%` }} /></i></div>
+          </div>
+          </div>
+  )
 
   return <div className={`game-app screen-${screen}`}>
     <canvas className="world-canvas" ref={canvas} aria-label="3D Nigerian city racing game" />
@@ -335,46 +356,44 @@ export default function Game() {
     {['drive', 'paused'].includes(screen) && <div className="hud">
       <div className="hud-top">
         <div className="hud-left">
-          <div className="street-sign"><strong>{road}</strong><span>{area} · {CITIES[city].code}</span></div>
-          {hud.race?.standings && screen === 'drive' && <ol className="live-standings">{hud.race.standings.map(e => <li key={e.name} className={e.me ? 'me' : ''}><b>{e.pos}</b><i style={{ background: e.color }} /><span>{e.name}</span><em>{e.gap === null ? '' : `${e.gap > 0 ? '+' : ''}${e.gap}m`}</em></li>)}</ol>}
+          {!touch && <div className="street-sign"><strong>{road}</strong><span>{area} · {CITIES[city].code}</span></div>}
+          {touch && hud.race && <div className={`pos-badge ${hud.race.place === 1 ? 'first' : ''}`}>{ORDINAL[hud.race.place - 1]}<small>/{hud.race.of}</small></div>}
+          {touch && wantedStars}
+          {touch && recklessChip}
+          {!touch && hud.race?.standings && screen === 'drive' && <ol className="live-standings">{hud.race.standings.map(e => <li key={e.name} className={e.me ? 'me' : ''}><b>{e.pos}</b><i style={{ background: e.color }} /><span>{e.name}</span><em>{e.gap === null ? '' : `${e.gap > 0 ? '+' : ''}${e.gap}m`}</em></li>)}</ol>}
         </div>
         <div className="hud-center">
-          {hud.wanted > 0 && <div className="wanted">{[1, 2, 3].map(s => <b key={s} className={s <= hud.wanted ? 'on' : ''}>★</b>)}</div>}
-          {hud.race && <div className="race-card">
+          {!touch && wantedStars}
+          {hud.race && !touch && <div className="race-card">
             <div className="race-head"><b className={hud.race.place === 1 ? 'first' : 'second'}>{ORDINAL[hud.race.place - 1]}<small>/{hud.race.of}</small></b><span className={hud.race.lap === hud.race.laps && hud.race.laps > 1 ? 'final' : ''}>{hud.race.laps > 1 ? (hud.race.lap === hud.race.laps ? 'FINAL LAP' : `LAP ${hud.race.lap}/${hud.race.laps}`) : hud.race.label}</span><em>{hud.race.time}s</em></div>
             <div className="race-track">{hud.race.rivals.map(r => <i key={r.id} className="them" style={{ left: `${r.at * 100}%`, background: r.color }} />)}<i className="me" style={{ left: `${hud.race.me * 100}%` }} /><span>🏁</span></div>
             <small>{(hud.race.toGo / 1000).toFixed(1)} km TO FINISH{hud.race.gap !== null && `  ·  ${hud.race.gap >= 0 ? '+' : ''}${hud.race.gap} m`}</small>
           </div>}
           {/* [ROAD NETWORK DISABLED] one straight road for now; uncomment to bring back junctions and turning.
           {hud.junction && !hud.race && <div className="chip junction"><span>↰ {crossName} ↱</span><small>JUNCTION {hud.junction.d} m · KEEP LEFT OR RIGHT + STEER IN{Math.abs(hud.speed) > TURN_SPEED ? ` · SLOW BELOW ${TURN_SPEED}` : ''}</small></div>} */}
-          {hud.reckless > .02 && <div className={`chip reckless ${hud.reckless > .75 ? 'hot' : ''}`}><span>{hud.reckless > .75 ? 'OLOKPA DEY WATCH YOU!' : 'RECKLESS DRIVING'}</span><i style={{ width: `${hud.reckless * 100}%` }} /></div>}
+          {!touch && recklessChip}
           {hud.arrest > 0 && !hud.arrested && <div className="chip arrest"><span>OLOKPA DON REACH YOU! DRIVE OFF!</span><i style={{ width: `${hud.arrest * 100}%` }} /></div>}
           {hud.wanted > 0 && hud.policePhase === 'pursuit' && <div className="chip pursuit">{hud.escape > 0 ? `LOSING THEM… ${Math.max(0, Math.ceil(6 - hud.escape))}` : `${hud.units > 1 ? `${hud.units} UNITS · ` : ''}POLICE ${hud.policeDistance} m`}</div>}
         </div>
-        <div className="hud-right">{coins}{weatherButton}{timeButton}<button className="round-btn fs-btn" aria-label="Fullscreen" title="Fullscreen" onClick={fullscreen}>⛶</button><button className="round-btn" aria-label="Pause" onClick={() => setScreen('paused')}>❚❚</button></div>
+        {touch
+          ? <div className="hud-right mobile"><div className="mobile-stats">{coins}{meters}</div><div className="mobile-buttons">{weatherButton}{timeButton}<button className="round-btn" aria-label="Fullscreen" onClick={fullscreen}>⛶</button><button className="round-btn" aria-label="Pause" onClick={() => setScreen('paused')}>❚❚</button></div></div>
+          : <div className="hud-right">{coins}{weatherButton}{timeButton}<button className="round-btn fs-btn" aria-label="Fullscreen" title="Fullscreen" onClick={fullscreen}>⛶</button><button className="round-btn" aria-label="Pause" onClick={() => setScreen('paused')}>❚❚</button></div>}
       </div>
       {screen === 'drive' && hud.countdown && <div className={`countdown ${hud.countdown === 'GO!' ? 'go' : ''}`} key={hud.countdown}>{hud.countdown}</div>}
       {toast && !hud.countdown && <div className="toast" key={toast.at}>{toast.text}</div>}
       {musicOn && track && <div className="radio" key={track.at} onClick={() => audio.current?.nextTrack()}><i>📻</i><span><small>{track.station} · NOW PLAYING</small><b>{track.name}</b> — {track.artist}</span></div>}
       <div className="chat">{chat.map(c => <div key={c.key}><b>{c.who}:</b> “{c.text}”</div>)}</div>
       <div className="hud-bottom">
-        <div className="minimap" aria-label="Minimap">
+        {!touch && <div className="minimap" aria-label="Minimap">
           <svg viewBox="-50 -50 100 100">
             <circle r="48" className="mm-bg" /><path d="M-24-50V50M24-50V50" className="mm-road" /><path d="M0-50V50" className="mm-lane" />
             {hud.blips.map((b, i) => <circle key={i} cx={Math.max(-44, Math.min(44, b.x * 20))} cy={Math.max(-44, Math.min(44, -b.z * .5))} r={b.police ? 5 : b.color ? 4.2 : 2.6} style={b.color ? { fill: b.color, stroke: '#10161a', strokeWidth: 1.2 } : undefined} className={b.police ? 'mm-police' : 'mm-car'} />)}
             <path d="M0-7 5 6 0 3-5 6Z" className="mm-me" />
           </svg>
           {connected && <span className="online">● {peers.length + 1} ONLINE</span>}
-        </div>
+        </div>}
         {showControls && <div className="key-hints"><kbd>W A S D</kbd> drive <kbd>SPACE</kbd> brake <kbd>H</kbd> horn <kbd>N</kbd> nitro <kbd>T</kbd> day/night <kbd>R</kbd> weather <kbd>M</kbd> radio <kbd>ESC</kbd> pause</div>}
-        <div className="gauge-wrap">
-        {(hud.nitro > 0 || hud.boost) && <div className={`nos-chip ${hud.boost ? 'burning' : ''}`}>{hud.boost ? 'PEPSI POWER!!' : <>PEPSI {'🥤'.repeat(hud.nitro)}<kbd>N</kbd></>}</div>}
-        {hud.damage > 0 && <div className={`damage ${hud.damage > 70 ? 'bad' : hud.damage > 35 ? 'mid' : ''}`}><span>DAMAGE</span><i><em style={{ width: `${hud.damage}%` }} /></i></div>}
-        <div className="gauge">
-          <svg viewBox="-64 -64 128 128"><circle r={gaugeR} className="g-track" strokeDasharray={`${arc} 999`} transform="rotate(135)" /><circle r={gaugeR} className="g-fill" strokeDasharray={`${arc * fill} 999`} transform="rotate(135)" /></svg>
-          <div><strong>{Math.abs(hud.speed)}</strong><small>KM/H</small><b>{hud.gear < 0 ? 'R' : hud.speed === 0 ? 'N' : hud.gear}</b><i className={`rpm ${hud.rpm > .9 ? 'red' : ''}`}><em style={{ width: `${Math.min(100, hud.rpm * 100)}%` }} /></i></div>
-        </div>
-        </div>
+        {!touch && meters}
       </div>
     </div>}
 
@@ -417,7 +436,7 @@ export default function Game() {
         <button className="arrow" aria-label="Next car" onClick={() => cycleCar(1)}>›</button>
       </div>
       <div className="garage-panel">
-        <div className="stats">{[['TOP SPEED', shownCar.speed + profile.upgrades[0] * 10, 250], ['ACCELERATION', shownCar.acceleration + profile.upgrades[1] * 8, 95], ['HANDLING', shownCar.handling + profile.upgrades[2] * 8, 120]].map(([n, v, m]) => <div key={n}><span>{n}<b>{v}</b></span><i><em style={{ width: `${v / m * 100}%` }} /></i></div>)}</div>
+        <div className="stats">{[['TOP SPEED', shownCar.speed + profile.upgrades[0] * 10, 300], ['ACCELERATION', shownCar.acceleration + profile.upgrades[1] * 8, 95], ['HANDLING', shownCar.handling + profile.upgrades[2] * 8, 120]].map(([n, v, m]) => <div key={n}><span>{n}<b>{v}</b></span><i><em style={{ width: `${v / m * 100}%` }} /></i></div>)}</div>
         <div className="paint">{colors.map(c => <button key={c} aria-label={'Paint ' + c} className={profile.color === c ? 'on' : ''} style={{ background: c }} onClick={() => setProfile(p => ({ ...p, color: c }))} />)}</div>
         <div className="upgrades">{['ENGINE', 'TURBO', 'GRIP'].map((m, i) => <button key={m} disabled={profile.upgrades[i] >= 5 || profile.points < UPGRADE_PRICES[profile.upgrades[i]]} onClick={() => upgrade(i)}><strong>{m}</strong><span className="pips">{[0, 1, 2, 3, 4].map(l => <i key={l} className={l < profile.upgrades[i] ? 'on' : ''} />)}</span><b>{profile.upgrades[i] >= 5 ? 'MAX' : `${UPGRADE_PRICES[profile.upgrades[i]].toLocaleString()} RP`}</b></button>)}</div>
         {shopButton || <button className="play small" disabled={!warm} onClick={drive}>{warm ? 'RACE!' : 'WARMING UP…'}</button>}
@@ -440,7 +459,7 @@ export default function Game() {
         <button className="arrow" aria-label="Next car" onClick={() => cycleCar(1)}>›</button>
       </div>
       <div className="garage-panel">
-        <div className="stats">{[['TOP SPEED', shownCar.speed, 250], ['ACCELERATION', shownCar.acceleration, 95], ['HANDLING', shownCar.handling, 120]].map(([n, v, m]) => <div key={n}><span>{n}<b>{v}</b></span><i><em style={{ width: `${v / m * 100}%` }} /></i></div>)}</div>
+        <div className="stats">{[['TOP SPEED', shownCar.speed, 300], ['ACCELERATION', shownCar.acceleration, 95], ['HANDLING', shownCar.handling, 120]].map(([n, v, m]) => <div key={n}><span>{n}<b>{v}</b></span><i><em style={{ width: `${v / m * 100}%` }} /></i></div>)}</div>
         <div className="paint">{colors.map(c => <button key={c} aria-label={'Paint ' + c} className={profile.color === c ? 'on' : ''} style={{ background: c }} onClick={() => setProfile(p => ({ ...p, color: c }))} />)}</div>
         <button className="play small" disabled={!warm || !shownOwned} onClick={finishOnboarding}>{shownOwned ? `LET'S GO, ${profile.name.trim().toUpperCase()}!` : `🔒 ${shownCar.price.toLocaleString()} RP · PICK A FREE CAR`}</button>
       </div>

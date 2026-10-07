@@ -99,7 +99,7 @@ export function createAudio() {
       const shift = gear !== lastGear; lastGear = gear
       const worklet = !!engineNode, oscLevel = worklet ? 0 : 1
       if (worklet) {
-        const k = `${cyl}:${engine.header}:${engine.tail}`
+        const k = `${cyl}:${engine.flat}:${engine.header}:${engine.tail}`
         if (k !== engineKey) { engineKey = k; engineNode.port.postMessage(engine) }
         engineNode.parameters.get('rpm').setTargetAtTime(rpm, now, .015); engineNode.parameters.get('throttle').setTargetAtTime(throttle, now, .04)
       }

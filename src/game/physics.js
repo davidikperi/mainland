@@ -18,7 +18,7 @@ const approach = (a, b, step) => a + clamp(b - a, -step, step)
 const noise = n => { const s = Math.sin(n * 12.9898) * 43758.5453; return s - Math.floor(s) }
 const kindOf = v => v.kind || (v.danfo ? 'danfo' : 'car')
 // What every vehicle is, and what beating its driver is worth.
-const SEDANS = [{ make: 'PEUGEOT', name: '504', year: 1982, tier: 1 }, { make: 'MERCEDES-BENZ', name: '190E', year: 1991, tier: 2 }, { make: 'TOYOTA', name: 'CAMRY', year: 2003, tier: 3 }, { make: 'DODGE', name: 'CHALLENGER', year: 2023, tier: 4 }, { make: 'TOYOTA', name: 'COROLLA', year: 2005, tier: 2 }, { make: 'HONDA', name: 'ACCORD', year: 2008, tier: 3 }, { make: 'LEXUS', name: 'RX 350', year: 2010, tier: 4 }, { make: 'MERCEDES-AMG', name: 'G 63', year: 2021, tier: 5 }]
+const SEDANS = [{ make: 'PEUGEOT', name: '504', year: 1982, tier: 1 }, { make: 'MERCEDES-BENZ', name: '190E', year: 1991, tier: 2 }, { make: 'TOYOTA', name: 'CAMRY', year: 2003, tier: 3 }, { make: 'DODGE', name: 'CHALLENGER', year: 2023, tier: 4 }, { make: 'TOYOTA', name: 'COROLLA', year: 2005, tier: 2 }, { make: 'HONDA', name: 'ACCORD', year: 2008, tier: 3 }, { make: 'LEXUS', name: 'RX 350', year: 2010, tier: 4 }, { make: 'MERCEDES-AMG', name: 'G 63', year: 2021, tier: 5 }, { make: 'LAMBORGHINI', name: 'HURACÁN', year: 2020, tier: 5 }, { make: 'FERRARI', name: 'F8 TRIBUTO', year: 2021, tier: 5 }, { make: 'BUGATTI', name: 'CHIRON', year: 2022, tier: 5 }]
 export const TIER_VALUE = [60, 100, 200, 350, 600, 900]
 export function vehicleInfo(v) {
   const kind = kindOf(v)
@@ -27,8 +27,8 @@ export function vehicleInfo(v) {
   return { ...other, value: TIER_VALUE[other.tier] }
 }
 // Each sedan's real body size (the 3D models match), so bumpers meet instead of sinking into each other.
-const SEDAN_SIZE = [[4.5, 1.72], [4.45, 1.7], [4.8, 1.8], [5.0, 1.93], [4.53, 1.7], [4.93, 1.84], [4.77, 1.89], [4.82, 1.93]]
-const sedanSize = v => (kindOf(v) === 'car' || kindOf(v) === 'taxi') && v.model !== undefined ? SEDAN_SIZE[v.model % (kindOf(v) === 'taxi' ? 3 : 8)] : null
+const SEDAN_SIZE = [[4.5, 1.72], [4.45, 1.7], [4.8, 1.8], [5.0, 1.93], [4.53, 1.7], [4.93, 1.84], [4.77, 1.89], [4.82, 1.93], [4.52, 1.98], [4.61, 1.98], [4.54, 2.04]]
+const sedanSize = v => (kindOf(v) === 'car' || kindOf(v) === 'taxi') && v.model !== undefined ? SEDAN_SIZE[v.model % (kindOf(v) === 'taxi' ? 3 : SEDAN_SIZE.length)] : null
 export const vehicleLength = v => { const s = sedanSize(v); return s ? s[0] + .15 : (KINDS[kindOf(v)] || KINDS.car).length }
 export const vehicleWidth = v => { const s = sedanSize(v); return s ? s[1] + .1 : (KINDS[kindOf(v)] || KINDS.car).width }
 const lateralGap = (a, b) => (vehicleWidth(a) + vehicleWidth(b)) / 2 + .05
@@ -75,6 +75,8 @@ const RUSH_SPAWN = ['car', 'danfo', 'taxi', 'car', 'danfo', 'okada', 'car', 'dan
 // Race traffic drives worse: reckless odds nearly doubled (most danfos, half the taxis and okadas, a quarter of cars).
 const RUSH_RECKLESS = 1.8
 export const START_LINE = 50, COUNTDOWN = 3.6
+// The fastest the rivals ever go (Challenger pace), and their strongest acceleration.
+export const RIVAL_TOP_SPEED = 200, RIVAL_ACCEL = 46
 export function newRace({ countdown = true } = {}) {
   const traffic = []
   RUSH_SPAWN.forEach((kind, i) => { const z = 160 + i * 55; traffic.push(makeVehicle(`npc${i}`, kind, i + 1, z, quietestLane(traffic, kind, z, i), RUSH_RECKLESS)) })
@@ -571,7 +573,7 @@ function driveTraffic(g, dt) {
       }
     }
     v.x = approach(v.x, v.tx ?? v.x, dt * (attacking ? 1.1 : racing || raging || reckless ? .75 : danfo ? .5 : .38))
-    const pull = racing && g.rush ? accelAt((g.accel || 30) * 1.05, v.speed, Math.max(60, v.cruise * (v.skill || 1))) : racing || raging ? 34 : reckless ? 26 : danfo ? 20 : 14
+    const pull = racing && g.rush ? accelAt(Math.min(g.accel || 30, RIVAL_ACCEL) * 1.05, v.speed, Math.max(60, v.cruise * (v.skill || 1))) : racing || raging ? 34 : reckless ? 26 : danfo ? 20 : 14
     v.speed = approach(v.speed, target, (target < v.speed ? 70 : attacking ? 80 : pull) * dt)
     v.z += v.speed / 3.6 * dt
     v.skid = (lastSpeed - v.speed) / dt > 65 && v.speed > 30 ? 1 : 0
@@ -770,7 +772,8 @@ export function stepWorld(g, k, dt, settings, peers = [], onBump = () => {}) {
     if (n >= 1 && n <= 3 && n !== race.count) { race.count = n; emit(g, { type: 'countdown', n }) }
     if (g.time >= race.go) {
       race.launched = true
-      for (const v of g.traffic) if (v.rival !== undefined) v.cruise = settings.maxSpeed * (kindOf(v) === 'danfo' ? .95 : 1)
+      // Rivals run at your car's pace, up to Challenger pace: a supercar can pull away from them.
+      for (const v of g.traffic) if (v.rival !== undefined) v.cruise = Math.min(settings.maxSpeed, RIVAL_TOP_SPEED) * (kindOf(v) === 'danfo' ? .95 : 1)
       // Launch: hold the revs in the sweet spot at GO for a flying start; bounce off the limiter and you spin the wheels.
       const revs = (g.rpm || 0) / (settings.engine?.redline || 6200)
       if (revs > .55 && revs < .9) { g.speed = 30; g.message = 'PERFECT START!'; emit(g, { type: 'perfectStart' }) }

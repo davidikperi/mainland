@@ -425,3 +425,28 @@ kbd { font: 700 12px var(--cond); background: rgba(255, 255, 255, .12); border: 
 @media (max-width: 620px) { .brief-items { grid-template-columns: 1fr; } }
 @media (max-height: 520px) and (orientation: landscape) { .brief-card { padding: 10px 14px; gap: 8px; } .brief-icon { height: 56px; } .brief-icon svg { max-height: 56px; } .brief-item { padding: 8px; } .brief-item p { font-size: 12px; } }
 @media (max-width: 480px) { .hud-right .fs-btn { display: none; } }
+
+/* Touch HUD: position badge top left; RP, damage and speed stacked top right with the buttons in a column beside them. */
+.pos-badge { justify-self: start; font: 34px/1 var(--display); padding: 5px 12px 7px; border-radius: 12px; background: var(--red); color: var(--white); border: 3px solid var(--white); box-shadow: 0 4px 12px rgba(0, 0, 0, .35); text-shadow: 0 2px 0 rgba(0, 0, 0, .35); }
+.pos-badge.first { background: var(--green); }
+.pos-badge small { font-size: 16px; opacity: .85; margin-left: 2px; }
+.hud-right.mobile { align-items: flex-start; gap: 8px; }
+.mobile-stats { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.mobile-buttons { display: flex; flex-direction: column; gap: 7px; }
+.hud .mobile-buttons .round-btn { width: 38px; height: 38px; font-size: 16px; }
+.hud .mobile-buttons .time-btn small { display: none; }
+.hud .mobile-stats .gauge-wrap { gap: 4px; }
+.hud .mobile-stats .gauge { width: 96px; height: 96px; }
+.hud .mobile-stats .gauge strong { font-size: 28px; }
+.hud .mobile-stats .damage { width: 96px; }
+.hud .mobile-stats .coins { font-size: 16px; padding: 3px 9px 3px 3px; }
+@media (max-height: 520px) and (orientation: landscape) {
+  .hud .mobile-stats .gauge { width: 84px; height: 84px; }
+  .hud .mobile-buttons { gap: 5px; }
+  .hud .mobile-buttons .round-btn { width: 34px; height: 34px; font-size: 14px; }
+  .pos-badge { font-size: 28px; }
+}
+
+/* Touch HUD: stars and the reckless meter under the position badge. */
+.hud-left .wanted { justify-self: start; font-size: 24px; }
+.hud-left .chip.reckless { justify-self: start; font-size: 11px; padding: 4px 10px 8px; letter-spacing: 1px; }

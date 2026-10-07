@@ -177,6 +177,10 @@ export function createModelKit(tex, city) {
     5: { L: 4.93, W: 1.84, belt: .95, roof: 1.47, hood: 1.2, trunk: .9, ws: .88, rw: .68, clear: .2, r: .34, overhang: .95, bevel: .09, rim: 'split', doors: 4, cq: .14 },
     6: { L: 4.77, W: 1.89, belt: 1.08, roof: 1.72, hood: 1.1, trunk: .12, ws: .82, rw: .5, clear: .32, r: .38, overhang: .9, bevel: .1, rim: 'fivespoke', doors: 4, cq: .3, crown: .05, taper: .1, tumble: .1 },
     7: { L: 4.82, W: 1.93, belt: 1.13, roof: 1.98, hood: 1.2, trunk: .04, ws: .2, rw: .04, clear: .38, r: .41, overhang: .72, bevel: .03, rim: 'split', doors: 4, cq: .1, crown: .008, taper: .015, tumble: .03 },
+    // 8 Lamborghini Huracán · 9 Ferrari F8 Tributo · 10 Bugatti Chiron: mid-engined, so a short nose, a cab-forward bubble and a long engine deck.
+    8: { L: 4.52, W: 1.98, belt: .72, roof: 1.15, hood: 1.1, trunk: 1.05, ws: 1.0, rw: .9, clear: .12, r: .33, overhang: .95, bevel: .05, rim: 'split', doors: 2, cq: .45, crown: .03, taper: .14, tumble: .2 },
+    9: { L: 4.61, W: 1.98, belt: .74, roof: 1.19, hood: 1.15, trunk: 1.05, ws: .95, rw: .85, clear: .12, r: .34, overhang: .95, bevel: .06, rim: 'fivespoke', doors: 2, cq: .42, crown: .035, taper: .13, tumble: .18 },
+    10: { L: 4.54, W: 2.04, belt: .78, roof: 1.21, hood: 1.2, trunk: .95, ws: .9, rw: .75, clear: .12, r: .36, overhang: .92, bevel: .08, rim: 'split', doors: 2, cq: .4, crown: .04, taper: .12, tumble: .17 },
   }
   function sedan(model, color, { taxi = false, plate = 0, driver = true } = {}) {
     const s = SEDANS[model] || SEDANS[0], { L, W, belt, roof, hood, trunk, ws, rw, clear, r, bevel } = s
@@ -221,7 +225,7 @@ export function createModelKit(tex, city) {
     }
     const pm = plateMats[plate % plateMats.length]
     front(b, new T.PlaneGeometry(.52, .14), pm, 0, clear + .3, fz - .1); b.add(new T.PlaneGeometry(.52, .14), pm, 0, clear + .32, rz + .1)
-    if (model !== 3 && model !== 7) b.add(new T.CylinderGeometry(.035, .035, .2, 10).rotateX(Math.PI / 2), chrome, -W * .3, clear + .04, rz)
+    if (model !== 3 && model !== 7 && model < 8) b.add(new T.CylinderGeometry(.035, .035, .2, 10).rotateX(Math.PI / 2), chrome, -W * .3, clear + .04, rz)
 
     if (model === 0) {
       // Peugeot 504: trapezoid lamps, barred grille, lion shield, chrome bumpers with rubber overriders, drip rails
@@ -360,6 +364,38 @@ export function createModelKit(tex, city) {
       b.add(new T.CircleGeometry(R * .7, 24), body, 0, belt + .12, rz + .262)
       b.add(new T.PlaneGeometry(.12, .12), decal('emb-merc', () => tex.emblem('merc')), 0, belt + .12, rz + .265)
       b.add(new T.PlaneGeometry(.26, .06), decal('badge-g63', () => tex.badge('G 63 AMG')), -W * .3, belt - .3, rz + .002)
+    }
+    if (model >= 8) {
+      // Supercars: carbon splitter and big intakes up front, side intakes behind the doors, diffuser and race exhausts out back.
+      b.add(boxGeo(W * .96, .04, .2), trim, 0, clear + .02, fz + .05)
+      for (const sx of [-1, 1]) {
+        front(b, new T.PlaneGeometry(W * .3, .16), trim, sx * W * .3, clear + .16, fz - .02)
+        front(b, lampShape([[-.26, -.02], [.18, -.05], [.26, .02], [-.2, .045]], sx), headlamp, sx * W * .34, belt - .1, fz - .012)
+        b.add(boxGeo(.02, .2, .5), trim, sx * (sideX + .005), (belt + clear) / 2 + .02, -(rwBase[0] - .45))
+      }
+      b.add(boxGeo(W * .9, .14, .12), trim, 0, clear + .08, rz + .02)
+      for (let x = -W * .36; x <= W * .361; x += W * .12) b.add(boxGeo(.012, .14, .16), trim, x, clear + .08, rz + .04)
+      if (model === 8) {
+        // Huracán: Y-shaped lamps, thin tail bar, two big exhausts high in the middle, a small ducktail.
+        b.add(new T.PlaneGeometry(W * .86, .07), tailMat('bar'), 0, belt - .08, rz)
+        for (const sx of [-1, 1]) b.add(new T.CylinderGeometry(.06, .06, .12, 6).rotateX(Math.PI / 2), chrome, sx * .12, clear + .26, rz + .02)
+        b.add(boxGeo(W * .8, .03, .14), body, 0, belt + .02, rz - .05, -.25)
+        b.add(new T.PlaneGeometry(.3, .06), decal('badge-huracan', () => tex.badge('HURACÁN')), 0, belt - .17, rz + .002)
+      } else if (model === 9) {
+        // F8 Tributo: twin round tail lamps each side, stacked exhausts, a rear spoiler lip.
+        for (const sx of [-1, 1]) for (const k of [.28, .4]) b.add(new T.CircleGeometry(.065, 18), taillamp, sx * W * k, belt - .08, rz + .001)
+        for (const sx of [-1, 1]) b.add(new T.CylinderGeometry(.05, .05, .12, 14).rotateX(Math.PI / 2), chrome, sx * .16, clear + .2, rz + .02)
+        b.add(boxGeo(W * .7, .025, .16), body, 0, belt + .03, rz - .04, -.3)
+        b.add(new T.PlaneGeometry(.26, .06), decal('badge-f8', () => tex.badge('F8 TRIBUTO')), 0, belt - .2, rz + .002)
+      } else {
+        // Chiron: horseshoe grille, the C-shaped side curve, a full-width lamp bar and one big centre exhaust.
+        front(b, new T.TorusGeometry(.2, .03, 8, 20, Math.PI), chrome, 0, clear + .32, fz - .03)
+        front(b, new T.CircleGeometry(.2, 20, 0, Math.PI), trim, 0, clear + .32, fz - .02)
+        for (const sx of [-1, 1]) b.add(new T.TorusGeometry(.42, .025, 6, 24, Math.PI).rotateY(sx * Math.PI / 2), chrome, sx * (sideX + .01), (belt + clear) / 2 + .02, -(wsBase[0] - .9))
+        b.add(new T.PlaneGeometry(W * .92, .05), tailMat('bar'), 0, belt - .05, rz)
+        b.add(new T.CylinderGeometry(.09, .09, .12, 18).rotateX(Math.PI / 2), chrome, 0, clear + .16, rz + .03)
+        b.add(new T.PlaneGeometry(.24, .06), decal('badge-chiron', () => tex.badge('CHIRON')), 0, belt - .17, rz + .002)
+      }
     }
     if (taxi) {
       const stripe = textured('taxi', () => tex.taxiSide())
