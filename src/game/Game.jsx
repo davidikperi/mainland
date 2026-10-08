@@ -320,6 +320,17 @@ export default function Game() {
     if (!canFullscreen) { setRenderError('This browser can\'t go fullscreen from a web page (iPhone Safari). Tap Share, then Add to Home Screen, and open Naija Rush from your home screen to play fullscreen.'); return }
     await enterFullscreen()
   }
+  // Touch steering: holding the left or right half of the screen steers that way (several fingers are tracked;
+  // the HUD and pedal buttons sit above this layer, so they still work).
+  const steerTouches = useRef(new Map())
+  const syncSteer = () => { const sides = [...steerTouches.current.values()]; keys.current.touchLeft = sides.includes('L'); keys.current.touchRight = sides.includes('R') }
+  const sideOf = e => e.clientX < window.innerWidth / 2 ? 'L' : 'R'
+  const steerZone = {
+    onPointerDown: e => { e.currentTarget.setPointerCapture?.(e.pointerId); steerTouches.current.set(e.pointerId, sideOf(e)); syncSteer() },
+    onPointerMove: e => { if (steerTouches.current.has(e.pointerId)) { steerTouches.current.set(e.pointerId, sideOf(e)); syncSteer() } },
+    onPointerUp: e => { steerTouches.current.delete(e.pointerId); syncSteer() },
+    onPointerCancel: e => { steerTouches.current.delete(e.pointerId); syncSteer() },
+  }
   const hold = key => ({ onPointerDown: e => { e.currentTarget.setPointerCapture(e.pointerId); keys.current[key] = true }, onPointerUp: () => { keys.current[key] = false }, onPointerCancel: () => { keys.current[key] = false } })
 
   const wrap = (n, len) => ((n % len) + len) % len, roads = CITIES[city].roads, road = roads[wrap(hud.street || 0, roads.length)], area = CITIES[city].areas[wrap((hud.street || 0) * 3 + Math.floor(hud.distance / .84), CITIES[city].areas.length)]
@@ -353,6 +364,7 @@ export default function Game() {
     {whip && <div className={`whip ${whip.side}`} key={whip.key} aria-hidden="true" onAnimationEnd={() => setWhip(null)} />}
     {hud.rain && screen === 'drive' && <div className="rain-screen" aria-hidden="true">{DROPS.map(([l, t, s, d], i) => <i key={i} style={{ left: `${l}%`, top: `${t * .6}%`, width: s * .3, height: s * .36, animationDelay: `${d * 2.5 + i * .37}s` }} />)}</div>}
 
+    {screen === 'drive' && touch && <div className="steer-zone" aria-hidden="true" {...steerZone}><span className="zone-hint left">◀ HOLD</span><span className="zone-hint right">HOLD ▶</span></div>}
     {['drive', 'paused'].includes(screen) && <div className="hud">
       <div className="hud-top">
         <div className="hud-left">

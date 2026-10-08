@@ -450,3 +450,9 @@ kbd { font: 700 12px var(--cond); background: rgba(255, 255, 255, .12); border: 
 /* Touch HUD: stars and the reckless meter under the position badge. */
 .hud-left .wanted { justify-self: start; font-size: 24px; }
 .hud-left .chip.reckless { justify-self: start; font-size: 11px; padding: 4px 10px 8px; letter-spacing: 1px; }
+
+/* Touch steering layer: the whole screen under the HUD; left half steers left, right half right. */
+.steer-zone { position: absolute; inset: 0; touch-action: none; -webkit-user-select: none; user-select: none; }
+.zone-hint { position: absolute; top: 50%; transform: translateY(-50%); font: 800 12px var(--cond); letter-spacing: 2px; color: rgba(255, 255, 255, .35); pointer-events: none; animation: hint-fade 4s 2s ease forwards; }
+.zone-hint.left { left: 12px; } .zone-hint.right { right: 12px; }
+@keyframes hint-fade { to { opacity: 0; } }

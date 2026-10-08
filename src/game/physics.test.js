@@ -1,4 +1,5 @@
 import { test } from 'node:test'
+import * as physicsCurve from './physics.js'
 import assert from 'node:assert/strict'
 import { galasNear, nitrosNear, nitroKey, NOS_MAX, vehicleWidth, newWorld, resolveContact, stepWorld, beginPursuit, updateArrest, startRace, racePosition, updateGearbox, raiseWanted, policeUnits, jamAt, potholeAt, vehicleInfo, TIER_VALUE, vehicleLength, CAR_LENGTH, ROAD_SCALE, RACE_DISTANCE, newRace, rushResults, RIVALS, RECKLESS_LIMIT, COUNTDOWN, START_LINE, LAPS, LAP_LENGTH, CHECKPOINT_SPEED, hitDamage } from './physics.js'
 const settings={maxSpeed:190,acceleration:30,handling:1}
@@ -305,7 +306,7 @@ test('naija rush: grid of four rivals, held through the 3-2-1, then everyone lau
 })
 test('naija rush: the race runs to the chequered flag and ranks all five drivers',()=>{
   const g=newRace();g.traffic=g.traffic.filter(v=>v.rival!==undefined)
-  const laps=[];for(let i=0;i<20000&&!g.race.done;i++){stepWorld(g,{w:true},.05,settings);laps.push(...g.events.filter(e=>e.type==='lap').map(e=>e.lap));g.events=[];if(g.police){g.police=null;g.backup=[];g.heat=0}g.reckless=0;g.damage=0;g.wrecked=false}
+  const laps=[];for(let i=0;i<20000&&!g.race.done;i++){stepWorld(g,{w:true,a:g.x>.08,d:g.x<-.08},.05,settings);laps.push(...g.events.filter(e=>e.type==='lap').map(e=>e.lap));g.events=[];if(g.police){g.police=null;g.backup=[];g.heat=0}g.reckless=0;g.damage=0;g.wrecked=false}
   const done=g.race.done;assert.ok(done,'race finished');assert.deepEqual(laps,[2,3]);assert.equal(g.race.lapTimes.length,2)
 assert.ok(done.place>=1&&done.place<=5)
   for(let i=0;i<8000&&g.race.finished.length<4;i++)stepWorld(g,{},.05,settings)
@@ -371,11 +372,21 @@ test('naija rush: stars climb quickly in a race chase',()=>{
 })
 test('naija rush: road chaos keeps kicking off ahead (swerves, brake-checks, blowouts, road rage)',()=>{
   const g=newRace();g.race.go=0;const seen={};let fights=0,crashes=0
-  for(let i=0;i<2400;i++){stepWorld(g,{w:true},.05,settings);for(const e of g.events){if(e.type==='chaos')seen[e.what]=(seen[e.what]||0)+1;if(e.type==='fight')fights++;if(e.type==='npcCrash')crashes++}g.events=[];g.damage=0;g.wrecked=false;if(g.police){g.police=null;g.backup=[];g.heat=0}g.reckless=0;g.arrested=false}
+  for(let i=0;i<2400;i++){stepWorld(g,{w:true,a:g.x>.08,d:g.x<-.08},.05,settings);for(const e of g.events){if(e.type==='chaos')seen[e.what]=(seen[e.what]||0)+1;if(e.type==='fight')fights++;if(e.type==='npcCrash')crashes++}g.events=[];g.damage=0;g.wrecked=false;if(g.police){g.police=null;g.backup=[];g.heat=0}g.reckless=0;g.arrested=false}
   const total=Object.values(seen).reduce((a,b)=>a+b,0)
   assert.ok(total>=8,`chaos events in 2 minutes: ${total}`);assert.ok(Object.keys(seen).length>=2,'more than one kind');assert.ok(fights>=1,'someone picked a fight');assert.ok(crashes>=1,'pile-ups in the traffic')
 })
 
 test('wrecking your car takes 75% more hits than before',()=>{
   for(const a of [.05,.2,.5]){const before=100/Math.min(7,a*14+1.5),now=100/hitDamage(a);assert.ok(Math.abs(now/before-1.75)<1e-9,'hit '+a+': '+before.toFixed(1)+' hits before, '+now.toFixed(1)+' now')}
+})
+
+test('naija rush: in a bend the car drifts to the outside unless you steer into it',()=>{
+  const {roadCurvature}=physicsCurve;let s=0;while(Math.abs(roadCurvature(s))<1/700)s+=10
+  const g=newRace();g.race.go=0;g.race.launched=true;g.traffic=[];g.z=s;g.x=0;g.speed=150
+  for(let i=0;i<10;i++)stepWorld(g,{w:true},.05,settings)
+  assert.ok(Math.sign(g.x)===-Math.sign(roadCurvature(s))&&Math.abs(g.x)>.05,'drifted to the outside')
+  const h=newRace();h.race.go=0;h.race.launched=true;h.traffic=[];h.z=s;h.x=0;h.speed=150
+  for(let i=0;i<10;i++)stepWorld(h,{w:true,a:h.x>.02,d:h.x<-.02},.05,settings)
+  assert.ok(Math.abs(h.x)<.06,'steering holds the line')
 })

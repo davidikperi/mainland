@@ -68,6 +68,21 @@ export const RIVALS = [
 ]
 // Three laps of 3 km. The road is straight, so each lap ends at a LAP gantry and the last at the FINISH.
 export const LAP_LENGTH = 3000, LAPS = 3
+// The circuit's bends (curvature = 1/radius in metres, + bends right). Straight off the grid, then left and right
+// sweepers of varied tightness with straights between, and straight again through the checkpoints and the finish.
+// The physics stays a straight track; the renderer draws the bends (bend.js) and a car in a bend drifts to the outside.
+export const BEND_SEGMENT = 400
+export function roadCurvature(s) {
+  const from = START_LINE + 260
+  if (s < from) return 0
+  for (const at of [START_LINE + LAP_LENGTH / 2, START_LINE + LAP_LENGTH * 1.5, START_LINE + LAP_LENGTH * 2.5, START_LINE + LAP_LENGTH * LAPS]) if (Math.abs(s - at) < 140) return 0
+  const k = Math.floor((s - from) / BEND_SEGMENT), u = ((s - from) % BEND_SEGMENT) / BEND_SEGMENT
+  const r = noise(k * 7.31 + 1.7), dir = noise(k * 3.97 + .4) > .5 ? 1 : -1
+  const radius = r < .18 ? 0 : r < .45 ? 700 : r < .78 ? 450 : 300
+  return radius ? dir * Math.sin(Math.PI * u) ** 2 / radius : 0
+}
+// How hard a bend pushes you outwards: at full speed in the tightest bend you need most of your steering.
+export const CURVE_DRIFT = .07
 // A police checkpoint halfway round every lap: vans block the outer lanes; go through the middle under this speed.
 export const CHECKPOINT_SPEED = 60
 // About a third of free-roam traffic and no BRT buses, so the race flows (and there are no go-slows).
@@ -809,9 +824,11 @@ export function stepWorld(g, k, dt, settings, peers = [], onBump = () => {}) {
     // if (g.police) for (const u of policeUnits(g)) driveUnit(g, u, dt)
     // return
   // }
-  const steer = (k.d || k.arrowright ? 1 : 0) - (k.a || k.arrowleft ? 1 : 0)
+  const steer = (k.d || k.arrowright || k.touchRight ? 1 : 0) - (k.a || k.arrowleft || k.touchLeft ? 1 : 0)
   g.steer += (steer - g.steer) * Math.min(1, dt * 7 * wet); g.previousX = g.x
   g.x += g.steer * dt * settings.handling * Math.min(Math.abs(g.speed) / 35, 1) * Math.sign(g.speed)
+  // In a bend the road turns under you: steer into it or drift to the outside.
+  if (g.rush) g.x -= roadCurvature(g.z) * (g.speed / 3.6) ** 2 * CURVE_DRIFT * dt
   // Grinding the kerb scrubs speed.
   if (Math.abs(g.x) > 1.08) {
     // [ROAD NETWORK DISABLED] one straight road for now; uncomment to bring back junctions and turning.

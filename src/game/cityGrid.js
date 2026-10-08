@@ -12,7 +12,7 @@ import { BLOCK, AXIS, CORRIDOR, worldAt } from './physics.js'
 
 const INNER = BLOCK / 2 - CORRIDOR          // half the side of a block of buildings
 const PIECE = BLOCK - 2 * CORRIDOR          // a road between two junctions
-const EDGE_KINDS = ['shops', 'busstop', 'shops', 'market', 'kiosks', 'billboard', 'shops', 'filling']
+const EDGE_KINDS = ['shops', 'busstop', 'shops', 'market', 'kiosks', 'billboard', 'shops', 'filling', 'mosque', 'suya', 'church', 'market', 'shops', 'suya']
 // [ROAD NETWORK DISABLED] street-name signs at junctions
 // const SHORT = n => n.replace(/ (ROAD|STREET|AVENUE|WAY|CRESCENT|EXPRESSWAY)$/, m => ({ ' ROAD': ' RD', ' STREET': ' ST', ' AVENUE': ' AVE', ' EXPRESSWAY': ' EXPY' })[m] || m)
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n))
@@ -30,6 +30,11 @@ export function createCity(scene, { kit, tex, C, city, high }) {
   const line = std('#eeeadf', .6), yellow = std('#e2b51c', .6), concrete = std('#b5b0a3', .9), dark = std('#2b2925', .95), grass = std('#62783a', 1), rail = std('#7a8288', .4, .6) // , roofDark = std('#55524c', .9)   [ROAD NETWORK DISABLED] block rooftops
   const signMats = new Map(), greenSign = lines => { const k = lines.join('|'); if (!signMats.has(k)) signMats.set(k, new T.MeshStandardMaterial({ map: tex.sign(lines, { w: 768, h: 192, bg: '#1b6b3f' }), roughness: .5 })); return signMats.get(k) }
   const towerWindows = tex.windows(7), glassTower = new T.MeshStandardMaterial({ map: towerWindows, emissiveMap: towerWindows, emissive: '#ffd9a0', emissiveIntensity: 0, roughness: .15, metalness: .6 })
+  // Signs in any colour, and the materials for mosques, churches, suya spots and flag bunting.
+  const colourSign = (lines, bg) => { const k = bg + lines.join('|'); if (!signMats.has(k)) signMats.set(k, new T.MeshStandardMaterial({ map: tex.sign(lines, { w: 768, h: 192, bg }), roughness: .5 })); return signMats.get(k) }
+  const plaster = std('#f1ece0', .85), mosqueGreen = std('#1f8a4c', .45, .2), gold = std('#e2b51c', .35, .7), churchWall = std('#e9e2cf', .85), churchRoof = std('#7a2f22', .7), coal = std('#2a1a12', .6, 0, { emissive: '#ff5a14', emissiveIntensity: 1.1 })
+  const flagMat = new T.MeshStandardMaterial({ map: tex.canvasTexture(96, 64, (c, w, h) => { c.fillStyle = '#008751'; c.fillRect(0, 0, w, h); c.fillStyle = '#ffffff'; c.fillRect(w / 3, 0, w / 3, h) }), side: T.DoubleSide, roughness: .8 })
+  const CHURCHES = [['GRACE & GLORY ASSEMBLY', 'SUNDAY SERVICE 7AM · ALL ARE WELCOME'], ['MOUNTAIN OF MERCY CHURCH', 'NIGHT VIGIL EVERY FRIDAY · 10PM'], ['LIVING FAITH TABERNACLE', 'COME AND RECEIVE YOUR MIRACLE']]
   // Shop-front facades: one shared material per design, lit up together at night.
   const facadeMats = {}
   for (let f = 2; f <= 6; f++) facadeMats[f] = [0, 1, 2].map(v => { const t = tex.facade(f * 31 + v * 7 + (city === 'Lagos' ? 0 : 500), C.palette[(f + v) % C.palette.length], C.shops[(f * 3 + v) % C.shops.length], f); return new T.MeshStandardMaterial({ map: t, emissiveMap: t.userData.night, emissive: '#ffffff', emissiveIntensity: 0, roughness: .85 }) })
@@ -116,6 +121,35 @@ export function createCity(scene, { kit, tex, C, city, high }) {
         b.add(boxGeo(.3, 7, .3), rail, 16.2, 3.5, z0 + 4)
         b.add(new T.PlaneGeometry(4, 2.4), greenSign(['MEGA FILLING STATION', 'PMS ₦1,050 / LITRE · DPK · AGO']), 16.0, 6, z0 + 4, 0, -Math.PI / 2)
         for (const dz of [-3, 3]) person(group, { seed: s * 5 + dz, role: 'walker' }, 20.5, mid + dz, Math.PI / 2, 'idle')
+      } else if (kind === 'mosque') {
+        // Mosque: white hall behind a low wall, green dome with a gold crescent, and a minaret by the road.
+        const x = 24, h = 7
+        b.add(boxGeo(14, h, 18), plaster, x, h / 2, mid); b.add(boxGeo(14.6, .5, 18.6), plaster, x, h + .2, mid)
+        b.add(new T.SphereGeometry(5.2, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2), mosqueGreen, x, h + .4, mid)
+        b.add(new T.CylinderGeometry(.08, .08, 1.6), gold, x, h + 6, mid); b.add(new T.TorusGeometry(.5, .09, 6, 16, Math.PI * 1.35), gold, x, h + 7.2, mid, 0, Math.PI / 2, .4)
+        b.add(new T.CylinderGeometry(1, 1.2, 20, 10), plaster, 17.6, 10, mid + 7.5); b.add(new T.CylinderGeometry(1.6, 1.6, .5, 12), mosqueGreen, 17.6, 14, mid + 7.5)
+        b.add(new T.ConeGeometry(1.15, 2.8, 10), mosqueGreen, 17.6, 21.4, mid + 7.5); b.add(new T.CylinderGeometry(.05, .05, 1.2), gold, 17.6, 23.3, mid + 7.5)
+        b.add(boxGeo(.4, 1.4, cl - 6), plaster, 15.9, .7, mid); b.add(new T.PlaneGeometry(3.2, 3.8), mosqueGreen, 16.95, 1.9, mid, 0, -Math.PI / 2)
+        if (mid - 10 - zb > 6) building(b, zb, mid - 10, s)
+        if (z1 - mid - 11 > 6) building(b, mid + 11, z1, s + 1)
+      } else if (kind === 'church') {
+        // Church: gable-roofed hall, a bell tower with a cross at the front, and its sign by the road.
+        const x = 24, h = 6.5, len = 20, roofW = 7.6
+        b.add(boxGeo(12, h, len), churchWall, x, h / 2, mid)
+        for (const sx of [-1, 1]) b.add(boxGeo(roofW, .35, len + .8), churchRoof, x + sx * 3.05, h + 2.1, mid, 0, 0, sx * .58)
+        b.add(boxGeo(4, 13, 4), churchWall, 17.8, 6.5, mid - 7); b.add(boxGeo(4.4, .4, 4.4), churchRoof, 17.8, 13.2, mid - 7)
+        b.add(boxGeo(.35, 3, .35), gold, 17.8, 15, mid - 7); b.add(boxGeo(.35, .35, 1.6), gold, 17.8, 15.6, mid - 7)
+        b.add(new T.PlaneGeometry(6, 1.5), colourSign(CHURCHES[s % CHURCHES.length], '#1d3b8a'), 15.9, 3.4, mid + 3, 0, -Math.PI / 2)
+        if (mid - 11 - zb > 6) building(b, zb, mid - 11, s)
+        if (z1 - mid - 11 > 6) building(b, mid + 11, z1, s + 1)
+      } else if (kind === 'suya') {
+        // Suya spot: a tin-roofed stall with a glowing grill, the mallam at work and the sign out front.
+        building(b, zb, mid - 3, s); building(b, mid + 5, z1, s + 1)
+        for (const dz of [-2.6, 2.6]) for (const dx of [-1.6, 1.6]) b.add(boxGeo(.12, 2.6, .12), rail, 13.6 + dx, 1.3, mid + 1 + dz)
+        b.add(boxGeo(3.8, .1, 6.2), tin, 13.6, 2.65, mid + 1, 0, 0, -.08)
+        b.add(boxGeo(1.2, .8, 2.2), dark, 12.9, .4, mid + 1); b.add(boxGeo(1.1, .06, 2.1), coal, 12.9, .82, mid + 1)
+        b.add(new T.PlaneGeometry(4.4, 1.1), colourSign(['MALLAM SUYA SPOT', 'BEEF · KIDNEY · CHICKEN · ₦500'], '#b3261e'), 11.7, 3.2, mid + 1, 0, -Math.PI / 2)
+        person(group, { seed: s * 31, role: 'hawker' }, 13.9, mid + 1, -Math.PI / 2, 'idle')
       } else if (kind === 'billboard') {
         kit.billboard(b, 17.5, mid - 6, C.billboards[s % C.billboards.length], s, 1); building(b, mid + 2, z1, s)
       } else {
@@ -159,12 +193,15 @@ export function createCity(scene, { kit, tex, C, city, high }) {
       strip(b, pavement, s * 23.7, 5.2, .12, .26, -L, L, 2.5)
       // Power lines along both pavements
       for (let z = -L + 20; z < L; z += 40) b.add(boxGeo(.22, 9, .22), std('#6b5a43', .9), s * 25.6, 4.5, z)
-      for (const y of [8.3, 8.7]) b.add(new T.CylinderGeometry(.015, .015, len, 4).rotateX(Math.PI / 2), dark, s * 25.6, y, 0)
+      for (const y of [8.3, 8.7]) b.add(new T.CylinderGeometry(.015, .015, len, 4, Math.ceil(len / 8)).rotateX(Math.PI / 2), dark, s * 25.6, y, 0)
     }
     strip(b, grass, 0, 2.4, .1, .28, -L, L)
     // Lamps every 40 m, on the same grid as the night-time light pools; palms in between.
     for (const z of L === BLOCK / 2 ? [-80, -40, 0, 40, 80] : [-40, 0, 40]) kit.palm(b, 0, z, Math.round(z) + 77)
-    for (const z of L === BLOCK / 2 ? [-100, -60, -20, 20, 60] : [-60, -20, 20, 60]) kit.streetlight(b, 0, z)
+    for (const z of L === BLOCK / 2 ? [-100, -60, -20, 20, 60] : [-60, -20, 20, 60]) {
+      kit.streetlight(b, 0, z)
+      for (const sx of [-1, 1]) b.add(new T.PlaneGeometry(1.1, .7), flagMat, sx * .62, 5.6, z, 0, Math.PI / 2, 0)   // a flag either side of the pole
+    }
     if (footbridge) {
       const deckY = 6.6
       for (const u of [-25, 25]) for (const dz of [-1.2, 1.2]) b.add(boxGeo(.6, deckY, .6), concrete, u, deckY / 2, dz)

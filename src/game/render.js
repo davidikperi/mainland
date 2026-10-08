@@ -3,19 +3,22 @@ import { Sky } from 'three/examples/jsm/objects/Sky.js'
 import { createTextureKit, rand } from './textures.js'
 import { createModelKit, Batch, boxGeo } from './models.js'
 import { CITIES } from './city.js'
-import { ROAD_SCALE, vehicleInfo, potholesNear, holeKey, START_ROAD, nitrosNear, nitroKey, galasNear, RIVALS, LAPS, LAP_LENGTH, CHECKPOINT_SPEED } from './physics.js'
+import { ROAD_SCALE, vehicleInfo, potholesNear, holeKey, START_ROAD, nitrosNear, nitroKey, galasNear, RIVALS, LAPS, LAP_LENGTH, CHECKPOINT_SPEED, roadCurvature } from './physics.js'
 import { createCity } from './cityGrid.js'
 import { createEffects } from './effects.js'
+import { installBend, updateBend, clearBend } from './bend.js'
 
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n))
 
 export function createWorldRenderer(canvas, city, quality = 'high') {
+  installBend()   // before any material compiles
   const high = quality === 'high', C = CITIES[city]
   const renderer = new T.WebGLRenderer({ canvas, antialias: high, powerPreference: 'high-performance' })
   // Shader error checks read the compile log, which makes the page wait for every shader to finish compiling. Development only.
   renderer.debug.checkShaderErrors = !!import.meta.env?.DEV
   // Nothing is drawn until prewarm() has compiled every shader in the background, so the menus stay responsive while it works.
-  let ready = false
+  let ready = false, frameCount = 0
+  const cullPos = new T.Vector3()
   renderer.setPixelRatio(Math.min(devicePixelRatio, high ? 1.5 : 1))
   renderer.shadowMap.enabled = high; renderer.shadowMap.type = T.PCFShadowMap
   renderer.outputColorSpace = T.SRGBColorSpace; renderer.toneMapping = T.ACESFilmicToneMapping; renderer.toneMappingExposure = .82
@@ -112,7 +115,7 @@ export function createWorldRenderer(canvas, city, quality = 'high') {
   }
   // Ground and (Lagos) lagoon follow the camera; their texture scrolls with distance.
   const groundMat = tex.photo(new T.MeshStandardMaterial({ color: C.ground, roughness: 1 }), 'soil', { normalScale: .5 })
-  const groundGeo = new T.PlaneGeometry(1600, 1600); { const uv = groundGeo.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 200, uv.getY(i) * 200) }
+  const groundGeo = new T.PlaneGeometry(1600, 1600, 1, 160);   // split along the road so it follows the bends { const uv = groundGeo.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 200, uv.getY(i) * 200) }
   const ground = new T.Mesh(groundGeo, groundMat); ground.rotation.x = -Math.PI / 2; ground.position.set(0, -.32, -300); ground.receiveShadow = true; scene.add(ground)
 
   // Horizon landmarks stay at a fixed distance, drawn without fog as hazy silhouettes.
@@ -185,6 +188,18 @@ export function createWorldRenderer(canvas, city, quality = 'high') {
       pos.needsUpdate = true; f.pivot.rotation.y = Math.sin(t * 1.7 + i) * .18
     }
   }
+  // Chevron boards on the outside of every proper bend, pointing the way it turns.
+  const chevronMat = dir => new T.MeshStandardMaterial({ map: tex.canvasTexture(256, 128, (c, w, h) => {
+    c.fillStyle = '#ffd21a'; c.fillRect(0, 0, w, h); c.fillStyle = '#111'
+    for (let i = 0; i < 3; i++) { const x0 = 40 + i * 70; c.beginPath(); for (const [u, v] of dir > 0 ? [[0, 0], [30, 0], [70, 64], [30, 128], [0, 128], [40, 64]] : [[70, 0], [40, 0], [0, 64], [40, 128], [70, 128], [30, 64]]) c.lineTo(x0 + u * .8, 10 + v * .84); c.fill() }
+    c.strokeStyle = '#111'; c.lineWidth = 10; c.strokeRect(0, 0, w, h)
+  }), roughness: .6, emissive: '#3a2a00', emissiveIntensity: .2 })
+  const chevronMats = { [-1]: chevronMat(-1), 1: chevronMat(1) }, chevronPost = std('#e8e8e8', .5)
+  const chevrons = Array.from({ length: 14 }, () => {
+    const grp = new T.Group(), board = new T.Mesh(new T.PlaneGeometry(2.2, 1.1), chevronMats[1]); board.position.y = 1.9
+    const post = new T.Mesh(new T.BoxGeometry(.1, 1.4, .1), chevronPost); post.position.y = .7
+    grp.add(board, post); grp.userData.board = board; grp.visible = false; scene.add(grp); return grp
+  })
   // Police checkpoints (the two vans are simulated vehicles; these are the props): cones funnelling the outer lanes into
   // the middle one, a roadside warning sign, and an officer waving traffic through.
   const coneGeo = new T.ConeGeometry(.22, .75, 10), coneMat = std('#ff6a13', .6), coneBand = std('#f4f4f2', .5)
@@ -304,6 +319,17 @@ export function createWorldRenderer(canvas, city, quality = 'high') {
     isReady() { return ready },
     render(g) {
       if (!ready) return
+      if (g.race?.grid) updateBend(roadCurvature, g.z); else clearBend()
+      // Far ahead, bent geometry sits well away from its straight-line bounds, so it mustn't be frustum-culled. Close by
+      // and behind you the bend is tiny, so normal culling stays on there (it saves a lot of draw calls).
+      if ((frameCount = (frameCount + 1) % 15) === 0) scene.traverse(o => { if (o.isMesh || o.isSprite || o.isPoints) { o.getWorldPosition(cullPos); o.frustumCulled = cullPos.z > -120 } })
+      let ci = 0
+      if (g.race?.grid) for (let s = Math.ceil((g.z + 18) / 26) * 26; s < g.z + 380 && ci < chevrons.length; s += 26) {
+        const k = roadCurvature(s); if (Math.abs(k) < 1 / 1000) continue
+        const c = chevrons[ci++], outside = k > 0 ? -1 : 1
+        c.visible = true; c.position.set(outside * 9.4, 0, -(s - g.z)); c.userData.board.material = chevronMats[k > 0 ? 1 : -1]
+      }
+      for (; ci < chevrons.length; ci++) chevrons[ci].visible = false
       const now = performance.now(), dt = Math.min((now - last) / 1000, .1); last = now
       const t = g.ambientTime
       // Build one queued vehicle per frame into the pool (idle-time warm-up).

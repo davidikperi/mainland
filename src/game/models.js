@@ -56,12 +56,13 @@ export class Batch {
   }
 }
 
-// Box with UVs scaled to world metres so tiled photo textures keep a constant size.
+// Box with UVs scaled to world metres so tiled photo textures keep a constant size. Long boxes (road strips, kerbs,
+// lane lines) are split every 8 m along their length so they can follow the road's bends (bend.js moves vertices).
 export function boxGeo(w, h, d, uvScale = 0) {
-  const g = new T.BoxGeometry(w, h, d)
+  const g = new T.BoxGeometry(w, h, d, 1, 1, d > 12 ? Math.ceil(d / 8) : 1)
   if (uvScale) {
-    const uv = g.attributes.uv, dims = [[d, h], [d, h], [w, d], [w, d], [w, h], [w, h]]
-    for (let f = 0; f < 6; f++) for (let i = 0; i < 4; i++) { const k = f * 4 + i; uv.setXY(k, uv.getX(k) * dims[f][0] / uvScale, uv.getY(k) * dims[f][1] / uvScale) }
+    const uv = g.attributes.uv, index = g.index, dims = [[d, h], [d, h], [w, d], [w, d], [w, h], [w, h]], done = new Uint8Array(uv.count)
+    g.groups.forEach(({ start, count }, f) => { for (let j = start; j < start + count; j++) { const k = index.getX(j); if (done[k]) continue; done[k] = 1; uv.setXY(k, uv.getX(k) * dims[f][0] / uvScale, uv.getY(k) * dims[f][1] / uvScale) } })
   }
   return g
 }
